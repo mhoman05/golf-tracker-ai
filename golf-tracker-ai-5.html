@@ -1,0 +1,2139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+<title>GolfCaddie AI</title>
+
+<!-- PWA / Home Screen -->
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="GolfCaddie"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="theme-color" content="#1a3a2a"/>
+<link rel="manifest" href="manifest.json"/>
+
+<!-- Inline SVG icon as apple-touch-icon (base64 PNG generated below via JS) -->
+<link rel="apple-touch-icon" id="appIcon" href=""/>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;900&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --gd:#1a3a2a;--gm:#2d5a3d;--gb:#3d7a52;--gl:#5aab72;
+  --gold:#c9a84c;--goldl:#e8c97a;--cream:#f5f0e8;
+  --tl:#7a7a7a;--red:#c0392b;--blue:#2980b9;
+  --tee-black:#222;--tee-blue:#1a5276;--tee-white:#d5d8dc;--tee-yellow:#d4ac0d;
+}
+html,body{height:100%;overflow:hidden}
+body{font-family:'DM Sans',sans-serif;background:var(--gd);color:var(--cream);overscroll-behavior:none}
+body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellipse at 20% 20%,rgba(61,122,82,.28),transparent 60%),radial-gradient(ellipse at 80% 80%,rgba(201,168,76,.09),transparent 50%);pointer-events:none;z-index:0}
+#app{position:fixed;inset:0;display:flex;flex-direction:column;z-index:1;overflow:hidden}
+
+/* TOP BAR */
+.top-bar{display:flex;align-items:center;justify-content:space-between;padding:13px 16px;border-bottom:1px solid rgba(201,168,76,.2);flex-shrink:0;background:rgba(0,0,0,.15)}
+.logo{display:flex;align-items:center;gap:9px}
+.logo-icon{width:33px;height:33px;background:var(--gold);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
+.logo h1{font-family:'Playfair Display',serif;font-size:1.15rem;font-weight:700;letter-spacing:-.4px}
+.logo h1 span{color:var(--gold)}
+.notion-pill{display:flex;align-items:center;gap:5px;padding:5px 11px;border-radius:999px;font-size:.69rem;font-weight:600;cursor:pointer;border:1px solid;transition:all .2s}
+.notion-pill.on{background:rgba(90,171,114,.12);border-color:var(--gl);color:var(--gl)}
+.notion-pill.off{background:rgba(201,168,76,.08);border-color:var(--gold);color:var(--gold)}
+.ndot{width:6px;height:6px;border-radius:50%;background:currentColor;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.settings-btn{background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.14);color:var(--cream);font-size:1rem;width:33px;height:33px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .18s;-webkit-tap-highlight-color:transparent;flex-shrink:0}
+.settings-btn:hover{background:rgba(255,255,255,.18)}
+
+/* TAB BAR */
+.tab-bar{display:flex;gap:2px;background:rgba(255,255,255,.04);padding:3px;flex-shrink:0;margin:8px 14px 0;border-radius:10px}
+.tab-btn{flex:1;padding:8px 4px;border:none;background:transparent;color:rgba(245,240,232,.38);font-family:'DM Sans',sans-serif;font-size:.73rem;font-weight:500;border-radius:7px;cursor:pointer;transition:all .2s;white-space:nowrap}
+.tab-btn.active{background:var(--gm);color:var(--cream)}
+
+/* SCREENS */
+.screen{display:none;flex-direction:column;overflow:hidden;min-height:0}
+.screen.active{display:flex;flex:1}
+.scroll{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px;min-height:0;overscroll-behavior:contain}
+
+/* CARDS */
+.card{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:13px;padding:16px;margin-bottom:12px}
+.card-title{font-family:'Playfair Display',serif;font-size:1rem;color:var(--gold);margin-bottom:13px;display:flex;align-items:center;gap:7px}
+
+/* SMALL FORM */
+.fgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
+.flabel{display:block;font-size:.67rem;font-weight:600;text-transform:uppercase;letter-spacing:.75px;color:var(--tl);margin-bottom:4px}
+.finput{width:100%;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);border-radius:8px;padding:10px 12px;color:var(--cream);font-family:'DM Sans',sans-serif;font-size:.9rem;outline:none;transition:border-color .2s}
+.finput:focus{border-color:var(--gold)}
+.finput option{background:var(--gd)}
+select.finput{-webkit-appearance:none;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='7'%3E%3Cpath d='M1 1l4.5 4.5L10 1' stroke='%237a7a7a' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;padding-right:28px}
+
+/* BUTTONS */
+.btn{padding:12px 20px;border-radius:10px;font-family:'DM Sans',sans-serif;font-weight:600;font-size:.88rem;cursor:pointer;border:none;transition:all .18s;display:inline-flex;align-items:center;justify-content:center;gap:6px;-webkit-tap-highlight-color:transparent}
+.btn-gold{background:var(--gold);color:var(--gd)}
+.btn-gold:hover{background:var(--goldl)}
+.btn-ghost{background:rgba(255,255,255,.08);color:var(--cream);border:1px solid rgba(255,255,255,.14)}
+.btn-ghost:hover{background:rgba(255,255,255,.13)}
+.btn-green{background:var(--gm);color:var(--cream);border:1px solid var(--gl)}
+.btn-green:hover{background:var(--gb)}
+.btn-danger{background:rgba(192,57,43,.15);color:#e74c3c;border:1px solid rgba(192,57,43,.3)}
+.btn-sm{padding:7px 13px;font-size:.78rem}
+.btn-block{width:100%}
+.btn:disabled{opacity:.35;pointer-events:none}
+
+/* ── COURSE SEARCH ── */
+.course-search-wrap{position:relative;margin-bottom:10px}
+.course-input-row{display:flex;gap:8px;align-items:flex-end}
+.course-input-row .finput{flex:1}
+.course-suggestions{position:absolute;top:100%;left:0;right:0;background:#1e4532;border:1px solid rgba(201,168,76,.35);border-radius:10px;margin-top:4px;z-index:100;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+.course-suggestion{padding:11px 14px;cursor:pointer;border-bottom:1px solid rgba(255,255,255,.06);transition:background .15s}
+.course-suggestion:last-child{border-bottom:none}
+.course-suggestion:hover{background:rgba(255,255,255,.1)}
+.cs-name{font-size:.88rem;font-weight:600;color:var(--cream)}
+.cs-loc{font-size:.72rem;color:var(--tl);margin-top:2px}
+.cs-meta{font-size:.68rem;color:var(--gold);margin-top:2px}
+.course-searching{padding:12px 14px;font-size:.82rem;color:var(--tl);text-align:center}
+.course-saved-tag{font-size:.66rem;color:var(--gl);background:rgba(90,171,114,.15);border:1px solid rgba(90,171,114,.3);border-radius:4px;padding:1px 6px;margin-left:6px}
+
+/* TEE BOX SELECTOR */
+.tee-selector{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-top:6px}
+.tee-btn{padding:9px 6px;border-radius:8px;border:2px solid transparent;cursor:pointer;font-family:'DM Sans',sans-serif;font-size:.78rem;font-weight:700;text-align:center;transition:all .18s;-webkit-tap-highlight-color:transparent}
+.tee-Black{background:rgba(34,34,34,.5);border-color:rgba(100,100,100,.4);color:#aaa}
+.tee-Blue{background:rgba(26,82,118,.4);border-color:rgba(41,128,185,.4);color:#7fb3d3}
+.tee-White{background:rgba(213,216,220,.12);border-color:rgba(213,216,220,.3);color:#d5d8dc}
+.tee-Yellow{background:rgba(212,172,13,.15);border-color:rgba(212,172,13,.4);color:#d4ac0d}
+.tee-btn.sel-Black{background:rgba(34,34,34,.9);border-color:#666;color:#fff}
+.tee-btn.sel-Blue{background:rgba(26,82,118,.85);border-color:#2980b9;color:#fff}
+.tee-btn.sel-White{background:rgba(213,216,220,.35);border-color:#d5d8dc;color:#fff}
+.tee-btn.sel-Yellow{background:rgba(212,172,13,.5);border-color:#d4ac0d;color:#fff}
+.tee-dot{width:10px;height:10px;border-radius:50%;margin:0 auto 4px;flex-shrink:0}
+.tee-dot-Black{background:#555}
+.tee-dot-Blue{background:#2980b9}
+.tee-dot-White{background:#d5d8dc}
+.tee-dot-Yellow{background:#d4ac0d}
+
+/* SETUP HOLES */
+.setup-hole-row{display:grid;grid-template-columns:30px 72px 82px 72px 1fr auto;gap:6px;align-items:center;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:9px;padding:7px 9px;margin-bottom:6px}
+.setup-hole-num{font-family:'Playfair Display',serif;font-size:.9rem;color:var(--gold);font-weight:700;text-align:center}
+.setup-hole-row input,.setup-hole-row select{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.11);border-radius:6px;padding:6px 7px;color:var(--cream);font-family:'DM Sans',sans-serif;font-size:.82rem;outline:none;width:100%}
+.setup-hole-row select{-webkit-appearance:none;appearance:none}
+.setup-hole-row input:focus,.setup-hole-row select:focus{border-color:var(--gold)}
+.setup-hole-row input option,.setup-hole-row select option{background:var(--gd)}
+.rm-hole{background:none;border:none;color:rgba(192,57,43,.5);cursor:pointer;font-size:.82rem;padding:3px;border-radius:4px;transition:color .18s}
+.rm-hole:hover{color:#e74c3c}
+.setup-row-hdr{display:grid;grid-template-columns:30px 72px 82px 72px 1fr auto;gap:6px;padding:0 9px;margin-bottom:4px}
+.setup-row-hdr span{font-size:.6rem;text-transform:uppercase;letter-spacing:.7px;color:var(--tl)}
+.setup-actions{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:10px}
+.start-round-bar{padding:12px 14px;border-top:1px solid rgba(201,168,76,.2);background:rgba(26,58,42,.95);backdrop-filter:blur(6px);flex-shrink:0}
+
+/* PROGRESS STRIP */
+.progress-strip{height:3px;background:rgba(255,255,255,.07);flex-shrink:0}
+.progress-fill{height:100%;background:var(--gold);transition:width .35s ease}
+
+/* HOLE NAV */
+.hole-nav{display:flex;align-items:center;justify-content:space-between;padding:11px 14px;background:rgba(0,0,0,.18);border-bottom:1px solid rgba(255,255,255,.07);flex-shrink:0}
+.hole-nav-btn{background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.14);color:var(--cream);font-family:'DM Sans',sans-serif;font-size:.82rem;font-weight:600;padding:7px 16px;border-radius:8px;cursor:pointer;transition:background .18s;-webkit-tap-highlight-color:transparent}
+.hole-nav-btn:hover{background:rgba(255,255,255,.16)}
+.hole-nav-btn:disabled{opacity:.25;pointer-events:none}
+.hole-center{text-align:center}
+.hole-center .hn{font-family:'Playfair Display',serif;font-size:1.3rem;font-weight:700;color:var(--gold);line-height:1}
+.hole-center .hs{font-size:.67rem;color:var(--tl);margin-top:2px}
+
+/* HOLE META */
+.hole-meta{display:grid;grid-template-columns:1fr 1fr 1fr;border-bottom:1px solid rgba(255,255,255,.07);flex-shrink:0}
+.meta-cell{padding:12px 10px;text-align:center;border-right:1px solid rgba(255,255,255,.06)}
+.meta-cell:last-child{border-right:none}
+.meta-cell .ml{display:block;font-size:.6rem;text-transform:uppercase;letter-spacing:.75px;color:var(--tl);margin-bottom:4px}
+.meta-cell select,.meta-cell input[type=number]{background:transparent;border:none;color:var(--cream);font-family:'Playfair Display',serif;font-size:1.25rem;font-weight:700;text-align:center;width:100%;outline:none;cursor:pointer;-webkit-appearance:none;appearance:none}
+.meta-cell input[type=number]{font-family:'DM Mono',monospace;font-size:1.15rem}
+.meta-cell input::placeholder{color:rgba(245,240,232,.2)}
+.meta-cell select option{background:var(--gd)}
+
+/* SCORE BANNER */
+.score-banner{display:flex;align-items:center;justify-content:center;gap:12px;padding:9px 16px;background:rgba(0,0,0,.12);border-bottom:1px solid rgba(255,255,255,.06);flex-shrink:0}
+.score-val{font-family:'Playfair Display',serif;font-size:1.8rem;font-weight:700;line-height:1}
+.score-lbl{font-size:.8rem;font-weight:600}
+.eagle{color:#9b59b6}.birdie{color:#e74c3c}.par-s{color:var(--gl)}.bogey{color:var(--gold)}.dbl{color:#e67e22}.tpl{color:#c0392b}.no-s{color:var(--tl)}
+
+/* SHOTS AREA */
+.shots-area{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:10px 13px}
+.shot-card{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:12px;margin-bottom:9px;position:relative}
+.shot-hdr{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.shot-badge{width:26px;height:26px;border-radius:50%;background:var(--gm);border:1px solid var(--gold);display:flex;align-items:center;justify-content:center;font-family:'DM Mono',monospace;font-size:.75rem;color:var(--gold);font-weight:700;flex-shrink:0}
+.shot-lbl{font-size:.72rem;font-weight:600;color:var(--tl);text-transform:uppercase;letter-spacing:.4px}
+.rm-shot{position:absolute;top:9px;right:9px;background:none;border:none;color:rgba(192,57,43,.5);font-size:.82rem;cursor:pointer;padding:3px 6px;border-radius:4px;transition:color .18s;-webkit-tap-highlight-color:transparent}
+.rm-shot:hover{color:#e74c3c}
+.shot-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:9px}
+.sf label{display:block;font-size:.64rem;font-weight:600;text-transform:uppercase;letter-spacing:.75px;color:var(--tl);margin-bottom:4px}
+.sf select,.sf input{width:100%;background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.16);border-radius:9px;padding:13px 12px;color:var(--cream);font-family:'DM Sans',sans-serif;font-size:.97rem;font-weight:500;outline:none;transition:border-color .18s;-webkit-appearance:none;appearance:none}
+.sf select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='7'%3E%3Cpath d='M1 1l4.5 4.5L10 1' stroke='%237a7a7a' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;padding-right:30px}
+.sf select option{background:var(--gd)}
+.sf input[type=number]{font-family:'DM Mono',monospace;font-size:1.05rem}
+.sf input:focus,.sf select:focus{border-color:var(--gold);background:rgba(255,255,255,.13)}
+.auto-hint{font-size:.6rem;color:var(--gold);margin-top:3px;font-style:italic}
+.result-row{display:grid;grid-template-columns:repeat(5,1fr);gap:5px}
+.result-row label{font-size:.64rem;font-weight:600;text-transform:uppercase;letter-spacing:.75px;color:var(--tl);margin-bottom:5px;display:block}
+.rbtn{padding:10px 2px;border-radius:8px;border:1px solid rgba(255,255,255,.13);background:rgba(255,255,255,.05);color:rgba(245,240,232,.5);font-family:'DM Sans',sans-serif;font-size:.73rem;font-weight:600;cursor:pointer;transition:all .18s;text-align:center;-webkit-tap-highlight-color:transparent}
+.rbtn.active-Great{background:rgba(90,171,114,.25);border-color:var(--gl);color:var(--gl)}
+.rbtn.active-Good{background:rgba(52,152,219,.2);border-color:#5dade2;color:#5dade2}
+.rbtn.active-OK{background:rgba(255,255,255,.13);border-color:rgba(255,255,255,.35);color:var(--cream)}
+.rbtn.active-Poor{background:rgba(230,126,34,.2);border-color:#e67e22;color:#e67e22}
+.rbtn.active-Missed{background:rgba(192,57,43,.22);border-color:#e74c3c;color:#e74c3c}
+.note-row{margin-top:9px}
+.note-row label{display:block;font-size:.64rem;font-weight:600;text-transform:uppercase;letter-spacing:.75px;color:var(--tl);margin-bottom:4px}
+.note-row input{width:100%;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.11);border-radius:8px;padding:10px 12px;color:var(--cream);font-family:'DM Sans',sans-serif;font-size:.88rem;outline:none}
+.note-row input:focus{border-color:rgba(201,168,76,.4)}
+.hole-actions{display:grid;grid-template-columns:1fr 1fr;gap:9px;padding:11px 13px;border-top:1px solid rgba(255,255,255,.07);background:rgba(0,0,0,.15);flex-shrink:0}
+
+/* ROUNDS */
+.round-item{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);border-radius:10px;margin-bottom:8px;cursor:pointer;transition:background .18s}
+.round-item:hover{background:rgba(255,255,255,.09)}
+.ri-info h3{font-size:.9rem;font-weight:600}
+.ri-info p{font-size:.72rem;color:var(--tl);margin-top:2px}
+.ri-right{text-align:right}
+.ri-score{font-family:'Playfair Display',serif;font-size:1.4rem;font-weight:700}
+.ri-diff{font-size:.7rem;color:var(--tl);margin-top:1px}
+.tee-badge{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:4px;vertical-align:middle}
+
+/* ROUND DETAIL */
+.round-detail{position:fixed;inset:0;z-index:200;background:var(--gd);display:flex;flex-direction:column;transform:translateX(100%);transition:transform .3s ease}
+.round-detail.open{transform:translateX(0)}
+.rd-top{display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.08);flex-shrink:0;background:rgba(0,0,0,.2)}
+.rd-back{background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.14);color:var(--cream);font-family:'DM Sans',sans-serif;font-size:.82rem;font-weight:600;padding:7px 14px;border-radius:8px;cursor:pointer}
+.rd-title{font-family:'Playfair Display',serif;font-size:1.05rem;color:var(--gold)}
+.rd-scroll{flex:1;overflow-y:auto;padding:14px}
+.rd-hole{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.09);border-radius:10px;padding:12px;margin-bottom:9px}
+.rd-hole-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.rd-hole-num{font-family:'Playfair Display',serif;font-size:.95rem;font-weight:700;color:var(--gold)}
+.rd-hole-score{font-family:'Playfair Display',serif;font-size:1.05rem;font-weight:700}
+.rd-shot{display:flex;gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid rgba(255,255,255,.05)}
+.rd-shot:last-child{border-bottom:none}
+.rd-shot-num{font-family:'DM Mono',monospace;font-size:.7rem;color:var(--gold);width:16px;flex-shrink:0}
+.rd-shot-info{font-size:.77rem;flex:1}
+.rd-shot-result{font-size:.67rem;font-weight:600;padding:2px 6px;border-radius:4px;flex-shrink:0}
+.res-Great{background:rgba(90,171,114,.2);color:var(--gl)}.res-Good{background:rgba(52,152,219,.15);color:#5dade2}.res-OK{background:rgba(255,255,255,.1);color:var(--cream)}.res-Poor{background:rgba(230,126,34,.15);color:#e67e22}.res-Missed{background:rgba(192,57,43,.15);color:#e74c3c}
+
+/* STATS */
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(105px,1fr));gap:9px;margin-bottom:16px}
+.stat-card{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.09);border-radius:11px;padding:13px;text-align:center}
+.stat-val{font-family:'Playfair Display',serif;font-size:1.65rem;font-weight:700;color:var(--gold);line-height:1}
+.stat-lbl{font-size:.61rem;text-transform:uppercase;letter-spacing:.8px;color:var(--tl);margin-top:4px}
+.sec-title{font-family:'Playfair Display',serif;font-size:.88rem;color:var(--cream);font-weight:600;margin:16px 0 9px;display:flex;align-items:center;gap:6px;opacity:.82}
+.badge{background:var(--gold);color:var(--gd);font-size:.58rem;font-weight:700;padding:1px 6px;border-radius:999px;text-transform:uppercase;letter-spacing:.4px}
+.hcp-badge{background:rgba(90,171,114,.15);border:1px solid rgba(90,171,114,.3);color:var(--gl);font-size:.58rem;font-weight:700;padding:1px 6px;border-radius:999px;text-transform:uppercase;letter-spacing:.4px}
+
+/* SG */
+.sg-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:9px;margin-bottom:9px}
+.sg-card{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.09);border-radius:11px;padding:14px}
+.sg-lbl{font-size:.63rem;text-transform:uppercase;letter-spacing:.85px;color:var(--tl);margin-bottom:3px}
+.sg-val{font-family:'Playfair Display',serif;font-size:1.4rem;font-weight:700;line-height:1}
+.sg-sub{font-size:.62rem;color:var(--tl);margin-top:1px}
+.sg-desc{font-size:.66rem;color:var(--tl);margin-top:3px}
+.sg-pos{color:var(--gl)}.sg-neg{color:#e74c3c}
+.sg-bars{margin-top:8px;display:flex;flex-direction:column;gap:3px}
+.sg-bar-row{display:flex;align-items:center;gap:6px;font-size:.6rem;color:var(--tl)}
+.sg-bar-lbl{width:42px;text-align:right;flex-shrink:0}
+.sg-bar-w{flex:1;background:rgba(255,255,255,.07);border-radius:3px;height:4px;overflow:hidden;position:relative}
+.sg-bar-fill{height:100%;border-radius:3px;position:absolute;top:0}
+.sg-bar-p{background:var(--gl)}.sg-bar-n{background:#e74c3c}
+.sg-bar-center{position:absolute;left:50%;top:0;width:1px;height:100%;background:rgba(255,255,255,.2)}
+
+.club-table{width:100%;border-collapse:collapse}
+.club-table th{text-align:left;font-size:.63rem;text-transform:uppercase;letter-spacing:.8px;color:var(--tl);padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.09)}
+.club-table td{padding:8px 8px;font-size:.82rem;border-bottom:1px solid rgba(255,255,255,.04)}
+.club-table tr:last-child td{border-bottom:none}
+.cname{font-weight:600;color:var(--gold)}
+
+/* AI CADDIE */
+.ai-panel{background:linear-gradient(135deg,rgba(45,90,61,.4),rgba(26,58,42,.6));border:1px solid rgba(90,171,114,.25);border-radius:13px;padding:16px;margin-bottom:13px;position:relative;overflow:hidden}
+.ai-panel::before{content:'🤖';position:absolute;right:14px;top:10px;font-size:1.8rem;opacity:.09;pointer-events:none}
+.ai-panel h2{font-family:'Playfair Display',serif;font-size:1.05rem;color:var(--gl);margin-bottom:10px;display:flex;align-items:center;gap:7px}
+.ai-resp{background:rgba(0,0,0,.2);border-radius:9px;padding:12px;font-size:.85rem;line-height:1.72;color:var(--cream);border-left:3px solid var(--gl);white-space:pre-wrap;margin-top:11px}
+.ai-resp.loading{color:var(--tl)}
+.quick-btns{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+
+/* NOTION MODAL */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:300;display:flex;align-items:flex-end;justify-content:center;backdrop-filter:blur(4px)}
+.modal{background:var(--gd);border:1px solid rgba(201,168,76,.35);border-radius:20px 20px 0 0;padding:24px;width:100%;max-width:520px;max-height:85vh;overflow-y:auto}
+.modal h2{font-family:'Playfair Display',serif;font-size:1.2rem;color:var(--gold);margin-bottom:5px}
+.modal p{font-size:.79rem;color:var(--tl);margin-bottom:13px;line-height:1.55}
+.modal-sec{margin-bottom:18px;padding-bottom:18px;border-bottom:1px solid rgba(255,255,255,.07)}
+.modal-sec:last-child{border-bottom:none;margin-bottom:0;padding-bottom:0}
+.modal-sec h3{font-family:'Playfair Display',serif;font-size:.95rem;color:var(--cream);margin-bottom:8px}
+.modal-actions{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.import-status{font-size:.79rem;margin-top:10px;padding:9px 12px;border-radius:7px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.09);line-height:1.55;display:none}
+
+/* TOAST */
+.toast-wrap{position:fixed;bottom:20px;right:16px;z-index:9999;display:flex;flex-direction:column;gap:6px;pointer-events:none}
+.toast{padding:10px 14px;border-radius:9px;font-size:.8rem;font-weight:500;animation:toastin .28s ease;max-width:290px;pointer-events:all}
+.toast.ok{background:var(--gm);border:1px solid var(--gl);color:var(--cream)}
+.toast.err{background:rgba(192,57,43,.9);border:1px solid var(--red);color:#fff}
+.toast.inf{background:rgba(41,128,185,.88);border:1px solid var(--blue);color:#fff}
+@keyframes toastin{from{transform:translateX(110%);opacity:0}to{transform:translateX(0);opacity:1}}
+
+.empty{text-align:center;padding:32px;color:var(--tl);font-size:.85rem}
+.empty .ei{font-size:2.4rem;margin-bottom:8px}
+.spinner{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.2);border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:6px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* NOTION WIZARD */
+.ntab{flex:1;padding:9px 4px;border:none;border-bottom:2px solid transparent;background:transparent;color:rgba(245,240,232,.38);font-family:"DM Sans",sans-serif;font-size:.72rem;font-weight:600;cursor:pointer;transition:all .18s}
+.ntab.active{color:var(--gold);border-bottom-color:var(--gold)}
+.nstep{display:none;flex-direction:column;max-height:72vh}
+.nstep.active{display:flex}
+.nstep-body{flex:1;overflow-y:auto;padding:16px 20px}
+.nstep-footer{padding:12px 20px;border-top:1px solid rgba(255,255,255,.08);background:rgba(0,0,0,.1);flex-shrink:0}
+.nstep-num{font-size:.67rem;text-transform:uppercase;letter-spacing:.8px;color:var(--tl);margin-bottom:3px}
+.nstep-title{font-family:"Playfair Display",serif;font-size:1.1rem;color:var(--gold);margin-bottom:6px}
+.nstep-desc{font-size:.79rem;color:var(--tl);margin-bottom:12px;line-height:1.55}
+.ninstruction{display:flex;flex-direction:column;gap:10px}
+.nrow{display:flex;align-items:flex-start;gap:10px;font-size:.81rem;line-height:1.5}
+.nbubble{width:22px;height:22px;border-radius:50%;background:var(--gold);color:var(--gd);font-size:.72rem;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px}
+.nhighlight{background:rgba(201,168,76,.18);color:var(--goldl);padding:1px 5px;border-radius:4px;font-weight:600;font-size:.82rem}
+.nlink{display:block;margin:2px 0 2px 32px;background:rgba(201,168,76,.12);border:1px solid rgba(201,168,76,.3);border-radius:7px;padding:8px 12px;color:var(--gold);font-size:.82rem;font-weight:600;text-decoration:none}
+.nlink:hover{background:rgba(201,168,76,.2)}
+.nlink-inline{color:var(--gold);text-decoration:underline}
+.nvisual{background:rgba(0,0,0,.2);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:10px 12px;margin:2px 0 2px 32px}
+/* ROUND TYPE BUTTONS */
+.round-type-btn{padding:10px;border-radius:9px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.06);color:rgba(245,240,232,.5);font-family:"DM Sans",sans-serif;font-size:.82rem;font-weight:600;cursor:pointer;transition:all .18s;-webkit-tap-highlight-color:transparent}
+.round-type-btn.active{background:var(--gm);border-color:var(--gl);color:var(--cream)}
+
+/* PER-SHOT SG */
+.shot-sg{font-size:.7rem;font-weight:700;margin-left:auto;padding:2px 8px;border-radius:4px}
+.shot-sg.sg-pos{background:rgba(90,171,114,.2);color:var(--gl)}
+.shot-sg.sg-neg{background:rgba(192,57,43,.18);color:#e74c3c}
+.recovery-tag{font-size:.6rem;background:rgba(230,126,34,.2);color:#e67e22;border-radius:3px;padding:1px 5px;font-weight:600;text-transform:uppercase;letter-spacing:.4px}
+
+/* GOLFITY-STYLE STATS */
+.gstat-section{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.09);border-radius:12px;padding:14px;margin-bottom:10px}
+.gstat-sec-title{font-size:.7rem;text-transform:uppercase;letter-spacing:.8px;color:var(--tl);margin-bottom:10px;font-weight:600}
+.gstat-row{display:flex;gap:6px;flex-wrap:wrap;justify-content:space-around}
+.gstat-big{text-align:center;flex:1;min-width:70px}
+.gstat-val{font-family:"Playfair Display",serif;font-size:1.8rem;font-weight:700;color:var(--gold);line-height:1}
+.gstat-lbl{font-size:.61rem;text-transform:uppercase;letter-spacing:.7px;color:var(--tl);margin-top:3px}
+.gstat-kpi-row{display:flex;gap:8px;flex-wrap:wrap;justify-content:space-around;align-items:flex-start}
+.gstat-kpi{text-align:center;flex:1;min-width:60px}
+.kpi-big{font-family:"Playfair Display",serif;font-size:1.7rem;font-weight:700;color:var(--gold);line-height:1.1}
+.kpi-lbl{font-size:.62rem;text-transform:uppercase;letter-spacing:.6px;color:var(--tl);margin-top:3px}
+.kpi-sub{font-size:.59rem;color:var(--tl);margin-top:2px}
+.kpi-ring{position:relative;width:56px;height:56px;margin:0 auto 5px}
+.kpi-ring svg{width:100%;height:100%}
+.kpi-ring .kpi-val{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:"DM Mono",monospace;font-size:.78rem;font-weight:700;color:var(--cream)}
+
+/* Scoring distribution bars */
+.score-dist{display:flex;gap:6px;align-items:flex-end;justify-content:center;padding:8px 0 4px;min-height:80px}
+.sdist-item{display:flex;flex-direction:column;align-items:center;gap:2px;flex:1}
+.sdist-bar-wrap{display:flex;align-items:flex-end;height:60px}
+.sdist-bar{width:100%;min-width:22px;border-radius:4px 4px 0 0;transition:height .4s ease}
+.sdist-num{font-family:"Playfair Display",serif;font-size:.95rem;font-weight:700;line-height:1}
+.sdist-lbl{font-size:.58rem;color:var(--tl);text-align:center}
+.sdist-pct{font-size:.56rem;color:var(--tl)}
+
+/* Score trend */
+.stat-trend{display:flex;gap:6px;margin-top:12px;overflow-x:auto;padding-bottom:4px}
+.trend-bar-wrap{display:flex;flex-direction:column;align-items:center;gap:3px;flex-shrink:0}
+.trend-score{font-family:"DM Mono",monospace;font-size:.78rem;font-weight:700;padding:5px 8px;border-radius:6px;min-width:34px;text-align:center}
+.t-birdie{background:rgba(231,76,60,.2);color:#e74c3c}
+.t-par{background:rgba(90,171,114,.2);color:var(--gl)}
+.t-bogey{background:rgba(201,168,76,.15);color:var(--gold)}
+.t-dbl{background:rgba(230,126,34,.2);color:#e67e22}
+.trend-date{font-size:.55rem;color:var(--tl);text-align:center}
+
+/* Stats screen layout override */
+#screen-stats .scroll{padding:12px}
+#statsGrid{display:block !important}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div class="top-bar">
+    <div class="logo">
+      <div class="logo-icon">⛳</div>
+      <h1>Golf<span>Caddie</span> AI</h1>
+    </div>
+    <div style="display:flex;gap:7px;align-items:center">
+      <button class="settings-btn" onclick="openSettings()" title="API Settings">⚙️</button>
+      <div id="notionPill" class="notion-pill off" onclick="openNotion()">
+        <div class="ndot"></div><span id="notionLbl">Notion</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="tab-bar" id="tabBar">
+    <button class="tab-btn active" onclick="goTab('setup')"  id="tb-setup">🏌️ New Round</button>
+    <button class="tab-btn"        onclick="goTab('rounds')" id="tb-rounds">📋 Rounds</button>
+    <button class="tab-btn"        onclick="goTab('stats')"  id="tb-stats">📊 Stats</button>
+    <button class="tab-btn"        onclick="goTab('caddie')" id="tb-caddie">🤖 Caddie</button>
+  </div>
+
+  <!-- ══ SETUP ══ -->
+  <div class="screen active" id="screen-setup">
+    <div class="scroll">
+
+      <div class="card">
+        <div class="card-title">🏌️ Round Details</div>
+        <div class="fgrid" style="margin-bottom:12px">
+          <input type="hidden" id="activeRoundType" value="casual"/>
+          <div>
+            <label class="flabel">Date</label>
+            <input class="finput" type="date" id="roundDate"/>
+          </div>
+          <div>
+            <label class="flabel">Playing Handicap</label>
+            <input class="finput" type="number" id="playingHcp" placeholder="e.g. 14.2" min="0" max="54" step="0.1"/>
+          </div>
+          <div>
+            <label class="flabel">Weather</label>
+            <select class="finput" id="weather">
+              <option>Sunny</option><option>Cloudy</option><option>Windy</option><option>Rainy</option>
+            </select>
+          </div>
+        </div>
+        <div style="margin-top:10px">
+          <label class="flabel">Round Type</label>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px">
+            <button class="round-type-btn active" id="rtb-casual" onclick="setRoundType('casual')">🏌️ Casual Round</button>
+            <button class="round-type-btn" id="rtb-tournament" onclick="setRoundType('tournament')">🏆 Tournament</button>
+          </div>
+        </div>
+
+        <label class="flabel">Course</label>
+        <div class="course-search-wrap">
+          <div class="course-input-row">
+            <input class="finput" id="courseInput" placeholder="Type course name to search…" autocomplete="off"
+              oninput="onCourseType()" onkeydown="onCourseKey(event)"/>
+            <button class="btn btn-ghost btn-sm" onclick="clearCourse()">✕</button>
+          </div>
+          <div id="courseSuggestions" style="display:none"></div>
+        </div>
+        <div id="courseSelected" style="display:none;margin-top:8px;padding:10px 12px;background:rgba(90,171,114,.1);border:1px solid rgba(90,171,114,.3);border-radius:8px;font-size:.82rem">
+          <span id="courseSelectedName" style="font-weight:600;color:var(--gl)"></span>
+          <span id="courseSelectedMeta" style="color:var(--tl);margin-left:6px"></span>
+        </div>
+
+        <div style="margin-top:12px">
+          <label class="flabel">Tee Box</label>
+          <div class="tee-selector">
+            <button class="tee-btn tee-Black" onclick="selectTee('Black')"><div class="tee-dot tee-dot-Black"></div>Black</button>
+            <button class="tee-btn tee-Blue sel-Blue" onclick="selectTee('Blue')"><div class="tee-dot tee-dot-Blue"></div>Blue</button>
+            <button class="tee-btn tee-White" onclick="selectTee('White')"><div class="tee-dot tee-dot-White"></div>White</button>
+            <button class="tee-btn tee-Yellow" onclick="selectTee('Yellow')"><div class="tee-dot tee-dot-Yellow"></div>Yellow</button>
+          </div>
+        </div>
+
+        <div style="margin-top:12px">
+          <label class="flabel">Course Par</label>
+          <input class="finput" type="number" id="coursePar" value="72" min="27" max="80"/>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">🕳️ Holes</div>
+        <div class="setup-actions">
+          <button class="btn btn-ghost btn-sm" onclick="quickSetup(9)">9 Holes</button>
+          <button class="btn btn-ghost btn-sm" onclick="quickSetup(18)">18 Holes</button>
+          <button class="btn btn-ghost btn-sm" onclick="addSetupHole()">+ Add Hole</button>
+        </div>
+        <div class="setup-row-hdr">
+          <span style="text-align:center">#</span>
+          <span>Par</span><span>Metres</span><span>Hdcp</span><span>Name</span><span></span>
+        </div>
+        <div id="setupHoles"></div>
+      </div>
+
+    </div>
+    <!-- Sticky Start Round button always visible at bottom -->
+    <div class="start-round-bar">
+      <button class="btn btn-gold btn-block" onclick="startRound()">Start Round →</button>
+    </div>
+  </div>
+
+  <!-- ══ HOLE SCREEN ══ -->
+  <div class="screen" id="screen-hole">
+    <div class="progress-strip"><div class="progress-fill" id="progressFill"></div></div>
+    <div class="hole-nav">
+      <button class="hole-nav-btn" id="btnPrev" onclick="navHole(-1)">← Prev</button>
+      <div class="hole-center">
+        <div class="hn" id="holeLabel">Hole 1</div>
+        <div class="hs" id="holeProg">1 of 9</div>
+      </div>
+      <button class="hole-nav-btn" id="btnNext" onclick="navHole(1)">Next →</button>
+    </div>
+    <div class="hole-meta">
+      <div class="meta-cell">
+        <span class="ml">Par</span>
+        <select id="hPar" onchange="holeMetaChanged()">
+          <option value="3">3</option><option value="4" selected>4</option><option value="5">5</option>
+        </select>
+      </div>
+      <div class="meta-cell">
+        <span class="ml">Metres</span>
+        <input type="number" id="hMetres" placeholder="—" min="30" max="650" oninput="holeMetresChanged()"/>
+      </div>
+      <div class="meta-cell">
+        <span class="ml">Hdcp</span>
+        <input type="number" id="hHdcp" placeholder="—" min="1" max="18"/>
+      </div>
+    </div>
+    <!-- score banner removed per user request -->
+    <div id="scoreBig" style="display:none"></div>
+    <div id="scoreName" style="display:none"></div>
+    <div class="shots-area" id="shotsArea"></div>
+    <div class="hole-actions">
+      <button class="btn btn-ghost" onclick="addShot()">+ Add Shot</button>
+      <button class="btn btn-gold" id="btnFinish" onclick="saveAndNext()">Save & Next →</button>
+    </div>
+  </div>
+
+  <!-- ══ ROUNDS ══ -->
+  <div class="screen" id="screen-rounds">
+    <div class="scroll">
+      <div class="card"><div class="card-title">📋 Round History</div><div id="roundsList"></div></div>
+    </div>
+  </div>
+
+  <!-- ══ STATS ══ -->
+  <div class="screen" id="screen-stats">
+    <div class="scroll">
+      <div class="sec-title">Overall Performance</div>
+      <div class="stats-grid" id="statsGrid"></div>
+      <div class="sec-title">📐 Strokes Gained <span class="badge">vs Scratch</span> <span class="hcp-badge" id="sgHcpBadge" style="display:none">vs Hcp</span></div>
+      <div class="sg-grid" id="sgGrid"></div>
+      <p id="sgNote" style="font-size:.69rem;color:var(--tl);margin-bottom:14px;line-height:1.55"></p>
+      <div class="sec-title">🏌️ Club Distances <span style="font-size:.65rem;color:var(--tl);font-family:'DM Sans'">(metres)</span></div>
+      <div class="card">
+        <table class="club-table">
+          <thead><tr><th>Club</th><th>Avg</th><th>Min</th><th>Max</th><th>Shots</th></tr></thead>
+          <tbody id="clubBody"></tbody>
+        </table>
+      </div>
+      <div class="sec-title">🎯 Shot Types</div>
+      <div class="stats-grid" id="typeGrid"></div>
+    </div>
+  </div>
+
+  <!-- ══ CADDIE ══ -->
+  <div class="screen" id="screen-caddie">
+    <div class="scroll">
+      <div class="ai-panel">
+        <h2>🎯 Club Recommender <span class="badge">Claude AI</span></h2>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:10px">
+          <div class="sf"><label>Distance to pin (m)</label><input type="number" id="cDist" placeholder="140"/></div>
+          <div class="sf"><label>Lie</label>
+            <select id="cLie"><option>Fairway</option><option>Rough</option><option>Tee Box</option><option>Bunker</option><option>Fringe</option></select>
+          </div>
+          <div class="sf"><label>Wind</label>
+            <select id="cWind"><option>No wind</option><option>Tailwind</option><option>Headwind</option><option>Crosswind</option></select>
+          </div>
+          <div class="sf"><label>Elevation</label>
+            <select id="cElev"><option>Flat</option><option>Uphill</option><option>Downhill</option></select>
+          </div>
+        </div>
+        <button class="btn btn-gold btn-block" onclick="getClubRec()">🎯 Recommend Club</button>
+        <div id="recResp" class="ai-resp" style="display:none"></div>
+      </div>
+      <div class="ai-panel">
+        <h2>💬 Ask Your Caddie</h2>
+        <div class="quick-btns">
+          <button class="btn btn-ghost btn-sm" onclick="qp('weak')">📉 Weaknesses</button>
+          <button class="btn btn-ghost btn-sm" onclick="qp('sg')">📐 My SG</button>
+          <button class="btn btn-ghost btn-sm" onclick="qp('gaps')">🏌️ Club Gaps</button>
+          <button class="btn btn-ghost btn-sm" onclick="qp('tips')">📈 Top Tips</button>
+          <button class="btn btn-ghost btn-sm" onclick="qp('hcp')">🏅 Beat My Hcp</button>
+        </div>
+        <div style="display:flex;gap:8px">
+          <div class="sf" style="flex:1"><label>Question</label><input type="text" id="cQuestion" placeholder="e.g. How do I play better from the rough?"/></div>
+          <button class="btn btn-green" style="align-self:flex-end" onclick="askCaddie()">Ask →</button>
+        </div>
+        <div id="caddieResp" class="ai-resp" style="display:none"></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ROUND DETAIL -->
+<div class="round-detail" id="roundDetail">
+  <div class="rd-top">
+    <button class="rd-back" onclick="closeDetail()">← Back</button>
+    <div class="rd-title" id="rdTitle"></div>
+  </div>
+  <div class="rd-scroll" id="rdScroll"></div>
+</div>
+
+<!-- NOTION MODAL — wizard style with step tabs -->
+<div class="overlay" id="notionOverlay" style="display:none" onclick="closeNotionOut(event)">
+  <div class="modal" style="padding:0;border-radius:20px 20px 0 0;overflow:hidden">
+
+    <!-- Header -->
+    <div style="padding:20px 20px 0;background:rgba(0,0,0,.15)">
+      <h2 style="font-family:Playfair Display,serif;font-size:1.2rem;color:var(--gold);margin-bottom:4px">🔗 Connect to Notion</h2>
+      <p style="font-size:.78rem;color:var(--tl);margin-bottom:14px">Takes about 3 minutes. No app login needed — you just copy two things from Notion's website.</p>
+      <!-- Step tabs -->
+      <div style="display:flex;gap:0;border-bottom:1px solid rgba(255,255,255,.08)" id="notionStepTabs">
+        <button class="ntab active" onclick="showNotionStep(1)" id="ntab1">1 Token</button>
+        <button class="ntab" onclick="showNotionStep(2)" id="ntab2">2 Database</button>
+        <button class="ntab" onclick="showNotionStep(3)" id="ntab3">3 Paste</button>
+        <button class="ntab" onclick="showNotionStep(4)" id="ntab4">4 Sync</button>
+      </div>
+    </div>
+
+    <!-- Step 1: Get token -->
+    <div class="nstep active" id="nstep1">
+      <div class="nstep-body">
+        <div class="nstep-num">Step 1 of 4</div>
+        <div class="nstep-title">Get your Notion token</div>
+        <p class="nstep-desc">This is like a password that lets the app write to your Notion. You create it on Notion's website.</p>
+
+        <div class="ninstruction">
+          <div class="nrow"><div class="nbubble">1</div><div>Open this link in your browser (sign in with Google as normal):</div></div>
+          <a href="https://www.notion.so/profile/integrations" target="_blank" class="nlink">👉 notion.so/profile/integrations</a>
+
+          <div class="nrow"><div class="nbubble">2</div><div>Click the big <span class="nhighlight">+ New integration</span> button</div></div>
+
+          <div class="nrow"><div class="nbubble">3</div><div>Type any name — e.g. <span class="nhighlight">Golf Tracker</span> — then click <span class="nhighlight">Save</span></div></div>
+
+          <div class="nrow"><div class="nbubble">4</div><div>You will see a long key starting with <span class="nhighlight">secret_</span> — click <span class="nhighlight">Show</span> then copy the whole thing</div></div>
+
+          <div class="nvisual">
+            <div style="font-size:.7rem;color:var(--tl);margin-bottom:4px">It will look like this:</div>
+            <div style="font-family:monospace;font-size:.75rem;background:rgba(0,0,0,.3);padding:8px 10px;border-radius:6px;color:var(--gold);word-break:break-all">secret_AbCdEfGhIjKlMnOpQrStUvWxYz123456789</div>
+          </div>
+        </div>
+      </div>
+      <div class="nstep-footer">
+        <button class="btn btn-gold" onclick="showNotionStep(2)" style="width:100%">I copied my token → Next</button>
+      </div>
+    </div>
+
+    <!-- Step 2: Create database -->
+    <div class="nstep" id="nstep2">
+      <div class="nstep-body">
+        <div class="nstep-num">Step 2 of 4</div>
+        <div class="nstep-title">Create a database in Notion</div>
+        <p class="nstep-desc">This is where your golf rounds will be stored. Skip this if you already have a Notion database you want to use.</p>
+
+        <div class="ninstruction">
+          <div class="nrow"><div class="nbubble">1</div><div>Open the <strong>Notion app</strong> or <a href="https://notion.so" target="_blank" class="nlink-inline">notion.so</a> in your browser</div></div>
+
+          <div class="nrow"><div class="nbubble">2</div><div>Click <span class="nhighlight">+ New page</span> in the left sidebar</div></div>
+
+          <div class="nrow"><div class="nbubble">3</div><div>On the new page, type <span class="nhighlight">/database</span> and choose <span class="nhighlight">Table — Full page</span></div></div>
+
+          <div class="nrow"><div class="nbubble">4</div><div>Give it a name like <span class="nhighlight">Golf Rounds</span></div></div>
+
+          <div class="nrow"><div class="nbubble">5</div><div>Now <strong>connect your integration</strong>: click the <span class="nhighlight">⋯</span> button at the top right of the page → <span class="nhighlight">Connections</span> → find <span class="nhighlight">Golf Tracker</span> → click <span class="nhighlight">Connect</span></div></div>
+        </div>
+      </div>
+      <div class="nstep-footer" style="display:flex;gap:8px">
+        <button class="btn btn-ghost" onclick="showNotionStep(1)" style="flex:1">← Back</button>
+        <button class="btn btn-gold" onclick="showNotionStep(3)" style="flex:2">Database ready → Next</button>
+      </div>
+    </div>
+
+    <!-- Step 3: Get Database ID and paste both -->
+    <div class="nstep" id="nstep3">
+      <div class="nstep-body">
+        <div class="nstep-num">Step 3 of 4</div>
+        <div class="nstep-title">Copy the Database ID</div>
+        <p class="nstep-desc">The Database ID is in the web address of your Notion database page.</p>
+
+        <div class="ninstruction">
+          <div class="nrow"><div class="nbubble">1</div><div>Open your Golf Rounds database in a <strong>web browser</strong> (not the Notion app)</div></div>
+
+          <div class="nrow"><div class="nbubble">2</div><div>Look at the address bar — the URL looks like this:</div></div>
+
+          <div class="nvisual">
+            <div style="font-family:monospace;font-size:.7rem;background:rgba(0,0,0,.3);padding:8px 10px;border-radius:6px;word-break:break-all;line-height:1.6">
+              notion.so/<span style="background:rgba(201,168,76,.3);color:var(--gold);padding:1px 3px;border-radius:3px">550e8400e29b41d4a716446655440000</span>?v=abc...
+            </div>
+            <div style="font-size:.68rem;color:var(--tl);margin-top:5px">↑ The highlighted part is your Database ID</div>
+          </div>
+
+          <div class="nrow"><div class="nbubble">3</div><div>Copy just that highlighted part — it is <strong>32 characters long</strong>, only letters and numbers</div></div>
+        </div>
+
+        <div style="margin-top:14px">
+          <label class="flabel">Paste your Token here (starts with secret_)</label>
+          <input class="finput" type="password" id="nToken" placeholder="secret_…" style="margin-bottom:10px"/>
+          <label class="flabel">Paste your Database ID here (32 characters)</label>
+          <input class="finput" type="text" id="nDbId" placeholder="550e8400e29b41d4a716446655440000"/>
+        </div>
+      </div>
+      <div class="nstep-footer" style="display:flex;gap:8px">
+        <button class="btn btn-ghost" onclick="showNotionStep(2)" style="flex:1">← Back</button>
+        <button class="btn btn-gold" onclick="saveAndTestNotion()" style="flex:2">Save &amp; Test →</button>
+      </div>
+    </div>
+
+    <!-- Step 4: Sync -->
+    <div class="nstep" id="nstep4">
+      <div class="nstep-body">
+        <div class="nstep-num">Step 4 of 4</div>
+        <div class="nstep-title">Sync your rounds</div>
+
+        <div id="notionConnectedBadge" style="display:none;text-align:center;padding:16px 0 8px">
+          <div style="font-size:2.5rem">✅</div>
+          <div style="font-family:Playfair Display,serif;font-size:1.1rem;color:var(--gl);margin-top:6px">Notion connected!</div>
+          <div style="font-size:.78rem;color:var(--tl);margin-top:4px">New rounds will auto-save to Notion.</div>
+        </div>
+        <div id="notionErrorBadge" style="display:none;text-align:center;padding:16px 0 8px">
+          <div style="font-size:2.5rem">❌</div>
+          <div style="font-family:Playfair Display,serif;font-size:1rem;color:#e74c3c;margin-top:6px">Connection failed</div>
+          <div style="font-size:.78rem;color:var(--tl);margin-top:4px">Check your token and Database ID are correct, and that you connected the integration to the database (Step 2, point 5).</div>
+          <button class="btn btn-ghost btn-sm" onclick="showNotionStep(3)" style="margin-top:10px">← Go back and fix</button>
+        </div>
+
+        <div style="margin-top:4px">
+          <div class="modal-sec" style="padding-top:14px">
+            <h3 style="font-family:Playfair Display,serif;font-size:.92rem;color:var(--cream);margin-bottom:8px">📤 Export existing rounds</h3>
+            <p style="font-size:.76rem;color:var(--tl);margin-bottom:9px">Push all locally saved rounds to your Notion database now.</p>
+            <button class="btn btn-ghost btn-sm" onclick="exportAll()" id="expBtn">Export All Rounds to Notion</button>
+            <div id="expStatus" class="import-status"></div>
+          </div>
+          <div class="modal-sec">
+            <h3 style="font-family:Playfair Display,serif;font-size:.92rem;color:var(--cream);margin-bottom:8px">📥 Import from Notion</h3>
+            <p style="font-size:.76rem;color:var(--tl);margin-bottom:9px">Restore rounds from Notion — great when switching phones.</p>
+            <button class="btn btn-ghost btn-sm" onclick="importFromNotion()" id="impBtn">Import Rounds from Notion</button>
+            <div id="impStatus" class="import-status"></div>
+          </div>
+          <div class="modal-sec">
+            <h3 style="font-family:Playfair Display,serif;font-size:.92rem;color:var(--cream);margin-bottom:8px">🗑️ Local Data</h3>
+            <button class="btn btn-danger btn-sm" onclick="clearLocal()">Clear Local Rounds</button>
+          </div>
+        </div>
+      </div>
+      <div class="nstep-footer">
+        <button class="btn btn-ghost btn-sm btn-block" onclick="closeNotion()">Close</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- SETTINGS MODAL -->
+<div class="overlay" id="settingsOverlay" style="display:none" onclick="closeSettingsOut(event)">
+  <div class="modal">
+    <h2>⚙️ Course Search Settings</h2>
+    <p>Connect a real golf course database for accurate hole-by-hole data for courses worldwide, including Spain and Europe.</p>
+
+    <div class="modal-sec">
+      <h3>🔑 RapidAPI Key</h3>
+      <p style="margin-bottom:9px">The <strong style="color:var(--cream)">Golf Course Finder</strong> API has 50,000+ real courses. The free plan gives you 100 searches/month — more than enough for regular play.</p>
+
+      <div style="background:rgba(201,168,76,.08);border:1px solid rgba(201,168,76,.25);border-radius:10px;padding:12px;margin-bottom:12px;font-size:.79rem;line-height:1.6">
+        <strong style="color:var(--gold)">How to get your free key:</strong><br/>
+        1. Go to <a href="https://rapidapi.com/golf-course-finder/api/golf-course-finder" target="_blank" style="color:var(--gold)">rapidapi.com → Golf Course Finder</a><br/>
+        2. Click <strong style="color:var(--cream)">Pricing</strong> → Subscribe to <strong style="color:var(--cream)">Basic (Free)</strong><br/>
+        3. Click your <strong style="color:var(--cream)">profile icon</strong> (top right) → <strong style="color:var(--cream)">My Apps</strong><br/>
+        4. Click <strong style="color:var(--cream)">default-application</strong> → <strong style="color:var(--cream)">Authorization</strong><br/>
+        5. Copy the long string next to <strong style="color:var(--cream)">X-RapidAPI-Key</strong><br/>
+        6. Paste it below and tap <strong style="color:var(--cream)">Save Key</strong>
+      </div>
+
+      <label class="flabel">Your RapidAPI Key</label>
+      <input class="finput" type="password" id="rapidKeyInput" placeholder="Paste your key here…" style="font-family:monospace;font-size:.85rem"/>
+      <div id="rapidKeyStatus" style="margin-top:7px;font-size:.75rem;color:var(--tl)">No key saved — using web search fallback.</div>
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+        <button class="btn btn-gold btn-sm" onclick="saveRapidKey()">Save Key</button>
+        <button class="btn btn-ghost btn-sm" onclick="testRapidKey()">Test Key</button>
+        <button class="btn btn-danger btn-sm" onclick="clearRapidKey()">Clear Key</button>
+      </div>
+    </div>
+
+    <div style="margin-top:14px">
+      <button class="btn btn-ghost btn-sm btn-block" onclick="closeSettings()">Close</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast-wrap" id="toastWrap"></div>
+
+<script>
+// ══════════════════════════════════════════════
+// CONSTANTS
+// ══════════════════════════════════════════════
+const CLUBS = ['D','3W','2i','4i','5i','6i','7i','8i','9i','PW','GW','SW','LW','P'];
+const LIES = ['Tee','Fairway','Rough','Bunker','Recovery','Fringe','Green'];
+const RESULTS = ['Great','Good','OK','Poor','Missed'];
+const SG_Q = {Great:0.45,Good:0.18,OK:0,Poor:-0.22,Missed:-0.55};
+const PAR_CLUB = {'3':'7i','4':'D','5':'D'};
+const PAR_LIE  = {'3':'Tee','4':'Tee','5':'Tee'};
+const PAR_TYPE = {'3':'Mid Iron','4':'Drive','5':'Drive'};
+const P9_PARS  = [4,4,3,5,4,3,4,5,4];
+const P18_PARS = [...P9_PARS,4,3,5,4,4,3,5,4,4];
+const P9_M     = [350,380,165,480,360,155,370,490,340];
+const P18_M    = [...P9_M,345,155,475,355,365,160,485,375,355];
+const TEE_COLORS = {Black:'#555',Blue:'#2980b9',White:'#d5d8dc',Yellow:'#d4ac0d'};
+
+// ══════════════════════════════════════════════
+// STATE
+// ══════════════════════════════════════════════
+let rounds      = JSON.parse(localStorage.getItem('gcai_rounds')||'[]');
+let courses     = JSON.parse(localStorage.getItem('gcai_courses')||'{}');
+let notionCfg   = JSON.parse(localStorage.getItem('gcai_notion')||'null');
+
+let activeHoles  = [];
+let shotData     = {};
+let currentHole  = 0;
+let selectedTee  = 'Blue';
+let courseSearchTimer = null;
+let courseSearchResults = [];
+let selectedCourseData = null; // {name, location, tees:{Black,Blue,White,Yellow}:{par,metres,holes[]}}
+
+// ══════════════════════════════════════════════
+// INIT
+// ══════════════════════════════════════════════
+window.onload = () => {
+  document.getElementById('roundDate').value = new Date().toISOString().split('T')[0];
+  quickSetup(9);
+  renderRounds();
+  renderStats();
+  updateNotionPill();
+};
+
+// ══════════════════════════════════════════════
+// TABS
+// ══════════════════════════════════════════════
+function goTab(t) {
+  ['setup','rounds','stats','caddie'].forEach(x => {
+    document.getElementById('screen-'+x).classList.toggle('active', x===t);
+    document.getElementById('tb-'+x).classList.toggle('active', x===t);
+  });
+  if (t==='rounds') renderRounds();
+  if (t==='stats')  renderStats();
+}
+function showHoleScreen() {
+  document.getElementById('tabBar').style.display='none';
+  ['setup','rounds','stats','caddie'].forEach(x=>document.getElementById('screen-'+x).classList.remove('active'));
+  document.getElementById('screen-hole').classList.add('active');
+}
+function exitHoleScreen() {
+  document.getElementById('tabBar').style.display='';
+  document.getElementById('screen-hole').classList.remove('active');
+  document.getElementById('screen-setup').classList.add('active');
+  document.getElementById('tb-setup').classList.add('active');
+}
+
+// ══════════════════════════════════════════════
+// TEE BOX
+// ══════════════════════════════════════════════
+function selectTee(tee) {
+  selectedTee = tee;
+  document.querySelectorAll('.tee-btn').forEach(b => {
+    const t = b.textContent.trim();
+    b.className = `tee-btn tee-${t}` + (t===tee?' sel-'+t:'');
+  });
+  // If we have course data, load that tee's holes
+  if (selectedCourseData && selectedCourseData.tees && selectedCourseData.tees[tee]) {
+    loadTeeHoles(selectedCourseData.tees[tee]);
+  }
+}
+
+function loadTeeHoles(teeData) {
+  if (!teeData || !teeData.holes || !teeData.holes.length) return;
+  document.getElementById('coursePar').value = teeData.par || 72;
+  document.getElementById('setupHoles').innerHTML = '';
+  let seq = 0;
+  teeData.holes.forEach(h => {
+    seq++;
+    addSetupHoleRaw(seq, h.par||4, h.metres||null, h.hdcp||null, h.name||'');
+  });
+  setupSeq = seq;
+}
+
+// ══════════════════════════════════════════════
+// COURSE SEARCH  — Golf Course Finder API (RapidAPI) + Claude fallback
+// ══════════════════════════════════════════════
+// API: https://rapidapi.com/golf-course-finder/api/golf-course-finder/
+// Free tier: 100 req/month. Set your key in Settings (⚙️ icon).
+
+function getRapidKey() {
+  return localStorage.getItem('gcai_rapidkey') || '';
+}
+
+function onCourseType() {
+  const val = document.getElementById('courseInput').value.trim();
+  clearTimeout(courseSearchTimer);
+  hideSuggestions();
+  selectedCourseData = null;
+  document.getElementById('courseSelected').style.display='none';
+
+  if (val.length < 2) return;
+
+  // Always show saved matches immediately
+  const saved = Object.keys(courses).filter(n => n.toLowerCase().includes(val.toLowerCase()));
+  if (saved.length) showSavedSuggestions(saved, val);
+
+  if (val.length < 3) return;
+
+  // Debounce real search
+  courseSearchTimer = setTimeout(() => searchCourse(val), 600);
+}
+
+function onCourseKey(e) {
+  if (e.key === 'Escape') hideSuggestions();
+}
+
+function hideSuggestions() {
+  document.getElementById('courseSuggestions').style.display = 'none';
+}
+
+function showSavedSuggestions(names, query='') {
+  const box = document.getElementById('courseSuggestions');
+  box.innerHTML = names.slice(0,4).map(n => `
+    <div class="course-suggestion" onclick="selectSavedCourse('${n.replace(/'/g,"\\'")}')">
+      <div class="cs-name">${n} <span class="course-saved-tag">Saved</span></div>
+      <div class="cs-loc">${courses[n]?.length||0} holes on file</div>
+    </div>`).join('');
+  box.style.display = 'block';
+}
+
+async function searchCourse(query) {
+  const box = document.getElementById('courseSuggestions');
+  const saved = Object.keys(courses).filter(n => n.toLowerCase().includes(query.toLowerCase()));
+
+  // Show saved + loading indicator
+  box.innerHTML = saved.slice(0,3).map(n=>`
+    <div class="course-suggestion" onclick="selectSavedCourse('${n.replace(/'/g,"\\'")}')">
+      <div class="cs-name">${n} <span class="course-saved-tag">Saved</span></div>
+      <div class="cs-loc">${courses[n]?.length||0} holes on file</div>
+    </div>`).join('')
+    + `<div class="course-searching"><span class="spinner"></span>Searching courses…</div>`;
+  box.style.display = 'block';
+
+  const rapidKey = getRapidKey();
+
+  if (rapidKey) {
+    // ── Path 1: Real API via Golf Course Finder on RapidAPI ──
+    await searchViaRapidAPI(query, rapidKey, saved);
+  } else {
+    // ── Path 2: Web search + Claude to parse real results ──
+    await searchViaWebSearch(query, saved);
+  }
+}
+
+async function searchViaRapidAPI(query, rapidKey, saved) {
+  const box = document.getElementById('courseSuggestions');
+  try {
+    // Golf Course Finder API – search endpoint
+    const url = `https://golf-course-finder.p.rapidapi.com/courses?name=${encodeURIComponent(query)}&limit=6`;
+    const resp = await fetch(url, {
+      headers: {
+        'x-rapidapi-host': 'golf-course-finder.p.rapidapi.com',
+        'x-rapidapi-key': rapidKey
+      }
+    });
+
+    if (!resp.ok) throw new Error('API error ' + resp.status);
+    const data = await resp.json();
+
+    // API returns array of courses
+    const apiCourses = Array.isArray(data) ? data : (data.courses || data.data || []);
+    courseSearchResults = apiCourses.map(c => ({
+      _apiId: c.id || c.course_id || null,
+      name: c.name || c.course_name,
+      location: [c.city, c.state, c.country].filter(Boolean).join(', '),
+      holes: c.holes || 18,
+      _raw: c
+    }));
+
+    renderSearchResults(saved, courseSearchResults);
+  } catch(e) {
+    console.warn('RapidAPI failed:', e.message);
+    // Fall back to web search
+    await searchViaWebSearch(query, saved);
+  }
+}
+
+async function searchViaWebSearch(query, saved) {
+  // Use Claude + web search tool to find real courses
+  const box = document.getElementById('courseSuggestions');
+  try {
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1000,
+        tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+        messages: [{
+          role: 'user',
+          content: `Search for real golf courses matching "${query}". Find actual golf clubs/courses with this name or in this location. Return ONLY a JSON array (no markdown, no explanation) of up to 5 results:
+[{"name":"Full Official Club Name","location":"City, Region, Country","holes":18,"website":"url or null","note":"any useful detail like par or opened year"}]
+Real courses only. Return [] if none found.`
+        }]
+      })
+    });
+    const data = await resp.json();
+    const text = (data.content||[]).map(b=>b.text||'').join('');
+    let results = [];
+    try {
+      const clean = text.replace(/```json|```/g,'').trim();
+      const match = clean.match(/\[[\s\S]*\]/);
+      if (match) results = JSON.parse(match[0]);
+    } catch {}
+
+    courseSearchResults = results.map(c => ({ ...c, _fromSearch: true }));
+    renderSearchResults(saved, courseSearchResults);
+  } catch(e) {
+    const box = document.getElementById('courseSuggestions');
+    box.innerHTML = (saved.length ? saved.slice(0,3).map(n=>`<div class="course-suggestion" onclick="selectSavedCourse('${n.replace(/'/g,"\\'")}')"><div class="cs-name">${n} <span class="course-saved-tag">Saved</span></div></div>`).join('') : '')
+      + `<div class="course-searching">Search unavailable — enter course name manually or add a RapidAPI key in ⚙️ Settings.</div>`;
+    box.style.display='block';
+  }
+}
+
+function renderSearchResults(saved, results) {
+  const box = document.getElementById('courseSuggestions');
+  box.innerHTML = '';
+
+  saved.slice(0,3).forEach(n => {
+    const div = document.createElement('div');
+    div.className = 'course-suggestion';
+    div.onclick = () => selectSavedCourse(n);
+    div.innerHTML = `<div class="cs-name">${n} <span class="course-saved-tag">Saved</span></div><div class="cs-loc">${courses[n]?.length||0} holes on file</div>`;
+    box.appendChild(div);
+  });
+
+  if (!results.length && !saved.length) {
+    box.innerHTML = `<div class="course-searching">No courses found. Try the city name, full club name, or add a RapidAPI key in ⚙️ Settings for better results.</div>`;
+    box.style.display='block'; return;
+  }
+
+  results.forEach((c, i) => {
+    const div = document.createElement('div');
+    div.className = 'course-suggestion';
+    div.onclick = () => selectFoundCourse(i);
+    div.innerHTML = `
+      <div class="cs-name">${c.name}</div>
+      <div class="cs-loc">📍 ${c.location||''}${c.holes?' · '+c.holes+' holes':''}</div>
+      ${c.note?`<div class="cs-meta">${c.note}</div>`:''}`;
+    box.appendChild(div);
+  });
+
+  box.style.display = 'block';
+}
+
+async function selectFoundCourse(idx) {
+  const c = courseSearchResults[idx];
+  if (!c) return;
+
+  document.getElementById('courseInput').value = c.name;
+  hideSuggestions();
+  document.getElementById('courseSelected').style.display='block';
+  document.getElementById('courseSelectedName').textContent = c.name;
+  document.getElementById('courseSelectedMeta').textContent = `${c.location||''} · Loading hole data…`;
+
+  toast('Fetching hole details…', 'inf');
+
+  // Now ask Claude to get real hole-by-hole data for this specific confirmed course
+  await fetchHoleDetails(c);
+}
+
+async function fetchHoleDetails(courseInfo) {
+  // Ask Claude (with web search) to find actual hole data for this specific course
+  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 2000,
+      tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+      messages: [{
+        role: 'user',
+        content: `Find the real hole-by-hole data for this golf course: "${courseInfo.name}" located in "${courseInfo.location||''}".
+
+Search for the course's scorecard. I need:
+- Par for each hole
+- Distance in METRES for each tee (Black/championship, Blue/medal, White/regular, Yellow/forward)
+- Stroke index (handicap) for each hole
+- Hole names if they have them
+
+Return ONLY a JSON object (no markdown, no explanation):
+{
+  "name": "Official course name",
+  "location": "City, Country",
+  "holes": 18,
+  "tees": {
+    "Black": {"par": 72, "metres": 6400, "slope": 135, "rating": 74.5,
+      "holes": [{"hole":1,"par":4,"metres":380,"hdcp":5,"name":""},...]},
+    "Blue":  {"par": 72, "metres": 6000, "slope": 130, "rating": 71.8,
+      "holes": [{"hole":1,"par":4,"metres":355,"hdcp":5,"name":""},...]},
+    "White": {"par": 72, "metres": 5600, "slope": 124, "rating": 69.2,
+      "holes": [{"hole":1,"par":4,"metres":330,"hdcp":5,"name":""},...]},
+    "Yellow":{"par": 72, "metres": 5200, "slope": 118, "rating": 67.0,
+      "holes": [{"hole":1,"par":4,"metres":310,"hdcp":5,"name":""},...]}
+  }
+}
+
+If you cannot find real data for some tees, estimate proportionally (Blue ~94%, White ~87%, Yellow ~81% of Black distances). Use real data wherever you can find it. Return ONLY the JSON object.`
+      }]
+    })
+  });
+
+  const data = await resp.json();
+  const text = (data.content||[]).map(b=>b.text||'').join('');
+  let courseData = null;
+  try {
+    const clean = text.replace(/```json|```/g,'').trim();
+    const match = clean.match(/\{[\s\S]*\}/);
+    if (match) courseData = JSON.parse(match[0]);
+  } catch {}
+
+  if (courseData && courseData.tees) {
+    selectedCourseData = courseData;
+    document.getElementById('courseSelectedMeta').textContent =
+      `${courseData.location||courseInfo.location||''} · ${courseData.holes||18} holes`;
+    const teeData = courseData.tees[selectedTee] || courseData.tees.Blue || courseData.tees.White;
+    if (teeData) loadTeeHoles(teeData);
+    toast(`${courseData.name} — ${selectedTee} tees loaded`, 'ok');
+  } else {
+    // Partial fallback: set the name, keep default holes
+    document.getElementById('courseSelectedMeta').textContent =
+      `${courseInfo.location||''} · Enter hole data manually`;
+    toast('Could not find hole data — please enter manually', 'inf');
+  }
+}
+
+function selectSavedCourse(name) {
+  document.getElementById('courseInput').value = name;
+  hideSuggestions();
+  document.getElementById('courseSelected').style.display='block';
+  document.getElementById('courseSelectedName').textContent = name;
+  document.getElementById('courseSelectedMeta').textContent = `${courses[name]?.length||0} holes on file`;
+  const template = courses[name];
+  if (template && template.length) {
+    document.getElementById('setupHoles').innerHTML='';
+    let seq=0;
+    template.forEach(h => { seq++; addSetupHoleRaw(seq,h.par,h.metres,h.hdcp,h.name); });
+    setupSeq=seq;
+    document.getElementById('coursePar').value = template.reduce((s,h)=>s+(h.par||4),0);
+  }
+}
+
+function clearCourse() {
+  document.getElementById('courseInput').value='';
+  document.getElementById('courseSelected').style.display='none';
+  selectedCourseData=null;
+  hideSuggestions();
+  quickSetup(9);
+}
+
+// ══════════════════════════════════════════════
+// SETUP HOLES
+// ══════════════════════════════════════════════
+let setupSeq = 0;
+
+function quickSetup(n) {
+  document.getElementById('setupHoles').innerHTML='';
+  setupSeq=0;
+  const pars=n===18?P18_PARS:P9_PARS;
+  const mets=n===18?P18_M:P9_M;
+  for(let i=0;i<n;i++) addSetupHoleRaw(++setupSeq, pars[i], mets[i]);
+}
+
+function addSetupHole() {
+  setupSeq++;
+  addSetupHoleRaw(setupSeq, 4, null, null, '');
+}
+
+function addSetupHoleRaw(sid, par=4, metres=null, hdcp=null, name='') {
+  const num = document.getElementById('setupHoles').children.length+1;
+  const row = document.createElement('div');
+  row.className='setup-hole-row'; row.id='sh-'+sid;
+  row.innerHTML=`
+    <div class="setup-hole-num" id="shn-${sid}">${num}</div>
+    <select id="shp-${sid}">
+      <option value="3"${par==3?' selected':''}>Par 3</option>
+      <option value="4"${par==4?' selected':''}>Par 4</option>
+      <option value="5"${par==5?' selected':''}>Par 5</option>
+    </select>
+    <input type="number" id="shm-${sid}" value="${metres||''}" placeholder="m" min="30" max="650"/>
+    <input type="number" id="shh-${sid}" value="${hdcp||''}" placeholder="—" min="1" max="18"/>
+    <input type="text"   id="shn2-${sid}" value="${name||''}" placeholder="Name"/>
+    <button class="rm-hole" onclick="removeSetupHole(${sid})">✕</button>`;
+  document.getElementById('setupHoles').appendChild(row);
+}
+
+function removeSetupHole(sid) {
+  document.getElementById('sh-'+sid)?.remove();
+  renumSetup();
+}
+
+function renumSetup() {
+  document.querySelectorAll('.setup-hole-row').forEach((r,i)=>{
+    const n=r.querySelector('.setup-hole-num'); if(n) n.textContent=i+1;
+  });
+}
+
+function getSetupHoles() {
+  const rows=document.querySelectorAll('.setup-hole-row'), holes=[];
+  rows.forEach((row,i) => {
+    const sid=row.id.replace('sh-','');
+    holes.push({
+      hole:i+1,
+      par:parseInt(document.getElementById('shp-'+sid)?.value||4),
+      metres:document.getElementById('shm-'+sid)?.value?parseInt(document.getElementById('shm-'+sid).value):null,
+      hdcp:document.getElementById('shh-'+sid)?.value?parseInt(document.getElementById('shh-'+sid).value):null,
+      name:document.getElementById('shn2-'+sid)?.value?.trim()||''
+    });
+  });
+  return holes;
+}
+
+function saveCourseTemplate(name, holes) {
+  courses[name]=holes.map(h=>({par:h.par,metres:h.metres||null,hdcp:h.hdcp||null,name:h.name||''}));
+  localStorage.setItem('gcai_courses',JSON.stringify(courses));
+}
+
+// ══════════════════════════════════════════════
+// START ROUND
+// ══════════════════════════════════════════════
+function startRound() {
+  const course=document.getElementById('courseInput').value.trim();
+  if (!course){toast('Enter a course name','err');return;}
+  const holes=getSetupHoles();
+  if (!holes.length){toast('Add at least one hole','err');return;}
+  saveCourseTemplate(course, holes);
+  activeHoles=holes; shotData={}; currentHole=0;
+  holes.forEach((_,i)=>{shotData[i]=[];});
+  showHoleScreen();
+  renderHole(0);
+}
+
+// ══════════════════════════════════════════════
+// HOLE RENDERING
+// ══════════════════════════════════════════════
+function renderHole(idx) {
+  currentHole=idx;
+  const h=activeHoles[idx], total=activeHoles.length;
+  document.getElementById('progressFill').style.width=((idx+1)/total*100)+'%';
+  document.getElementById('holeLabel').textContent=`Hole ${h.hole}${h.name?' – '+h.name:''}`;
+  document.getElementById('holeProg').textContent=`${idx+1} of ${total}`;
+  document.getElementById('hPar').value=h.par;
+  document.getElementById('hMetres').value=h.metres||'';
+  document.getElementById('hHdcp').value=h.hdcp||'';
+  document.getElementById('btnPrev').disabled=idx===0;
+  document.getElementById('btnNext').disabled=idx===total-1;
+  const isLast=idx===total-1;
+  document.getElementById('btnFinish').textContent=isLast?'Finish Round 💾':'Save & Next →';
+  document.getElementById('btnFinish').onclick=isLast?finishRound:saveAndNext;
+  renderShots(idx);
+  updateScoreBanner(idx);
+}
+
+function holeMetaChanged() {
+  const idx=currentHole;
+  activeHoles[idx].par=parseInt(document.getElementById('hPar').value);
+  activeHoles[idx].metres=document.getElementById('hMetres').value?parseInt(document.getElementById('hMetres').value):null;
+  activeHoles[idx].hdcp=document.getElementById('hHdcp').value?parseInt(document.getElementById('hHdcp').value):null;
+  updateScoreBanner(idx);
+}
+
+function holeMetresChanged() {
+  holeMetaChanged();
+  const idx=currentHole, m=activeHoles[idx].metres;
+  if (!m) return;
+  if (shotData[idx].length>0 && shotData[idx][0]._auto) {
+    shotData[idx][0].distance=m;
+    const el=document.getElementById(`dist-${idx}-0`);
+    if(el) el.value=m;
+  }
+}
+
+function navHole(dir) { saveCurrentMeta(); renderHole(currentHole+dir); }
+function saveAndNext() { saveCurrentMeta(); renderHole(currentHole+1); }
+
+function saveCurrentMeta() {
+  const idx=currentHole;
+  activeHoles[idx].par=parseInt(document.getElementById('hPar').value);
+  activeHoles[idx].metres=document.getElementById('hMetres').value?parseInt(document.getElementById('hMetres').value):null;
+  activeHoles[idx].hdcp=document.getElementById('hHdcp').value?parseInt(document.getElementById('hHdcp').value):null;
+}
+
+// ══════════════════════════════════════════════
+// SHOTS
+// ══════════════════════════════════════════════
+function addShot() {
+  const idx=currentHole, h=activeHoles[idx], isFirst=shotData[idx].length===0;
+  const shot={
+    club:isFirst?(PAR_CLUB[h.par]||'D'):'P',
+    lie:isFirst?(PAR_LIE[h.par]||'Tee'):'Green',
+    distance:isFirst&&h.metres?h.metres:null,
+    result:'OK', note:'',
+    _auto:isFirst&&h.metres?true:false
+  };
+  shotData[idx].push(shot);
+  renderShots(idx);
+  updateScoreBanner(idx);
+  setTimeout(()=>{const a=document.getElementById('shotsArea');if(a)a.scrollTop=a.scrollHeight;},50);
+}
+
+function removeShot(idx,si) {
+  shotData[idx].splice(si,1);
+  renderShots(idx);
+  updateScoreBanner(idx);
+}
+
+function renderShots(idx) {
+  const area=document.getElementById('shotsArea');
+  if(!shotData[idx]||!shotData[idx].length){
+    area.innerHTML=`<div class="empty"><div class="ei">🏌️</div>Tap "+ Add Shot" to log your first shot</div>`;
+    return;
+  }
+  area.innerHTML='';
+  shotData[idx].forEach((shot,si)=>area.appendChild(buildShotCard(idx,si,shot)));
+}
+
+function buildShotCard(idx,si,shot) {
+  const card=document.createElement('div'); card.className='shot-card'; card.id=`sc-${idx}-${si}`;
+  const co=CLUBS.map(c=>`<option${c===shot.club?' selected':''}>${c}</option>`).join('');
+  const lo=LIES.map(l=>`<option${l===(shot.lie||'Tee')?' selected':''}>${l}</option>`).join('');
+  const rb=RESULTS.map(r=>`<button class="rbtn${shot.result===r?' active-'+r:''}" onclick="setResult(${idx},${si},'${r}',this)">${r}</button>`).join('');
+  const isRecovery=(shot.lie||'')==='Recovery';
+  const sg=shotSG(shot,si,shotData[idx]);
+  const sgHtml=sg!==null?`<div class="shot-sg ${sg>=0?'sg-pos':'sg-neg'}">${sg>=0?'+':''}${sg.toFixed(2)} SG</div>`:'';
+  card.innerHTML=`
+    <div class="shot-hdr">
+      <div class="shot-badge">${si+1}</div>
+      <div class="shot-lbl">Shot ${si+1}${isRecovery?' <span class="recovery-tag">Recovery</span>':''}</div>
+      ${sgHtml}
+    </div>
+    <button class="rm-shot" onclick="removeShot(${idx},${si})">✕</button>
+    <div class="shot-grid">
+      <div class="sf"><label>Club</label><select onchange="updShot(${idx},${si},'club',this.value);renderShots(${idx})">${co}</select></div>
+      <div class="sf"><label>Lie</label><select onchange="updShot(${idx},${si},'lie',this.value);renderShots(${idx})">${lo}</select></div>
+      <div class="sf">
+        <label>Distance (m)</label>
+        <input type="number" id="dist-${idx}-${si}" value="${shot.distance||''}" placeholder="—" min="0" max="400"
+          oninput="updShot(${idx},${si},'distance',this.value?parseInt(this.value):null);updShot(${idx},${si},'_auto',false);renderShots(${idx})"/>
+        ${shot._auto?'<div class="auto-hint">↑ from hole length</div>':''}
+      </div>
+      <div class="sf"><label>Result</label><div class="result-row">${rb}</div></div>
+    </div>
+    <div class="note-row">
+      <label>Note</label>
+      <input type="text" value="${shot.note||''}" placeholder="optional note…" oninput="updShot(${idx},${si},'note',this.value)"/>
+    </div>`;
+  return card;
+}
+
+// Per-shot Strokes Gained using distance-based expected strokes model
+// Expected strokes to hole from distance (m) — scratch baseline
+function expectedStrokes(distM) {
+  if(distM===null||distM===undefined) return null;
+  // Lookup table: [distance_m, expected_strokes_to_hole]
+  const tbl=[
+    [0,1.0],[2,1.05],[5,1.12],[8,1.18],[10,1.22],[15,1.32],[20,1.44],
+    [30,1.58],[40,1.70],[50,1.82],[60,1.94],[75,2.05],[90,2.15],
+    [100,2.20],[115,2.34],[130,2.48],[145,2.62],[160,2.74],[175,2.84],
+    [200,2.96],[225,3.08],[250,3.20],[275,3.35],[300,3.48],[350,3.62],[400,3.75]
+  ];
+  if(distM<=0) return 1.0;
+  if(distM>=400) return 3.75;
+  for(let i=0;i<tbl.length-1;i++){
+    if(distM>=tbl[i][0]&&distM<=tbl[i+1][0]){
+      const t=(distM-tbl[i][0])/(tbl[i+1][0]-tbl[i][0]);
+      return tbl[i][1]+t*(tbl[i+1][1]-tbl[i][1]);
+    }
+  }
+  return 2.5;
+}
+
+function shotSG(shot, si, allShots) {
+  // SG for this shot = expected_before - expected_after - 1
+  // Recovery shots excluded from SG
+  if(!shot.distance && si===0) return null;
+  const distBefore = shot.distance;
+  if(!distBefore) return null;
+  const expBefore = expectedStrokes(distBefore);
+  // Distance after = next shot's distance, or 0 if holed
+  const nextShot = allShots[si+1];
+  const distAfter = nextShot ? (nextShot.distance||0) : 0;
+  const expAfter  = nextShot ? expectedStrokes(distAfter) : 0;
+  const sg = expBefore - expAfter - 1;
+  return parseFloat(sg.toFixed(2));
+}
+
+function updShot(idx,si,k,v) { if(shotData[idx]?.[si]!==undefined) shotData[idx][si][k]=v; }
+
+function setResult(idx,si,result,btn) {
+  updShot(idx,si,'result',result);
+  document.getElementById(`sc-${idx}-${si}`)?.querySelectorAll('.rbtn').forEach(b=>{
+    b.className='rbtn'+(b.textContent===result?' active-'+result:'');
+  });
+}
+
+function updateScoreBanner(idx) {
+  // Banner removed — no-op (elements hidden)
+}
+
+// ══════════════════════════════════════════════
+// FINISH ROUND
+// ══════════════════════════════════════════════
+function finishRound() {
+  saveCurrentMeta();
+  const course=document.getElementById('courseInput').value.trim();
+  const date=document.getElementById('roundDate').value;
+  const par=parseInt(document.getElementById('coursePar').value);
+  const weather=document.getElementById('weather').value;
+  const playingHcp=document.getElementById('playingHcp').value?parseFloat(document.getElementById('playingHcp').value):null;
+  const roundType=document.getElementById('activeRoundType')?.value||'casual';
+  const holes=[]; let totalScore=0;
+  activeHoles.forEach((h,idx)=>{
+    const shots=shotData[idx]||[]; if(!shots.length)return;
+    totalScore+=shots.length;
+    holes.push({hole:h.hole,par:h.par,metres:h.metres,hdcp:h.hdcp,name:h.name,score:shots.length,
+      shots:shots.map(s=>({club:s.club,type:s.type,distance:s.distance,result:s.result,note:s.note}))});
+  });
+  if(!holes.length){toast('No shots logged','err');return;}
+  const round={id:Date.now().toString(),course,date,par,weather,score:totalScore,
+    playingHcp,tee:selectedTee,roundType,holes,savedAt:new Date().toISOString()};
+  rounds.unshift(round);
+  localStorage.setItem('gcai_rounds',JSON.stringify(rounds));
+  saveCourseTemplate(course,activeHoles);
+  const diff=totalScore-par;
+  toast(`Round saved! ${totalScore} (${diff>=0?'+':''}${diff})`, 'ok');
+  if(notionCfg) saveRoundToNotion(round);
+  exitHoleScreen();
+  goTab('rounds');
+}
+
+// ══════════════════════════════════════════════
+// RENDER ROUNDS
+// ══════════════════════════════════════════════
+function renderRounds() {
+  const el=document.getElementById('roundsList');
+  if(!rounds.length){el.innerHTML=`<div class="empty"><div class="ei">⛳</div>No rounds yet!</div>`;return;}
+  el.innerHTML=rounds.map((r,ri)=>{
+    const diff=r.score-r.par, ds=diff===0?'E':(diff>0?'+'+diff:diff);
+    const cls=diff<0?'birdie':diff>0?'bogey':'par-s';
+    const tc=TEE_COLORS[r.tee]||'transparent';
+    const hcpStr=r.playingHcp!=null?` · Hcp ${r.playingHcp}`:'';
+    return `<div class="round-item" onclick="openDetail(${ri})">
+      <div class="ri-info">
+        <h3><span class="tee-badge" style="background:${tc}"></span>${r.course}</h3>
+        <p>${fmtDate(r.date)} · ${r.tee||'Blue'} tee · ${r.holes.length} holes${hcpStr} · ${r.weather}</p>
+      </div>
+      <div class="ri-right"><div class="ri-score ${cls}">${r.score}</div><div class="ri-diff">${ds} vs par</div></div>
+    </div>`;
+  }).join('');
+}
+
+function openDetail(ri) {
+  const r=rounds[ri];
+  document.getElementById('rdTitle').textContent=`${r.course} — ${fmtDate(r.date)}`;
+  const s=document.getElementById('rdScroll');
+  const diff=r.score-r.par, ds=diff===0?'E':(diff>0?'+'+diff:diff);
+  const putts=r.holes.flatMap(h=>h.shots).filter(s=>s.type==='Putt').length;
+  const netScore=r.playingHcp!=null?r.score-Math.round(r.playingHcp):null;
+  const stableford=r.playingHcp!=null?calcStableford(r):null;
+  s.innerHTML=`
+    <div class="card" style="margin-bottom:12px">
+      <div style="display:grid;grid-template-columns:repeat(${netScore!=null?5:4},1fr);gap:8px;text-align:center">
+        ${[['Score',r.score],['vs Par',ds],['Holes',r.holes.length],['Putts',putts],
+           ...(netScore!=null?[['Net',netScore]]:[])]
+          .map(([l,v])=>`<div><div style="font-family:'Playfair Display',serif;font-size:1.5rem;font-weight:700;color:var(--gold)">${v}</div><div style="font-size:.61rem;text-transform:uppercase;letter-spacing:.7px;color:var(--tl);margin-top:3px">${l}</div></div>`).join('')}
+      </div>
+      ${stableford!=null?`<div style="text-align:center;margin-top:10px;font-size:.8rem;color:var(--gl)">Stableford: <strong>${stableford} pts</strong> · Playing Hcp: ${r.playingHcp}</div>`:''}
+      <div style="text-align:center;margin-top:6px;font-size:.75rem;color:var(--tl)">
+        <span class="tee-badge" style="background:${TEE_COLORS[r.tee]||'#555'}"></span>${r.tee||'Blue'} tees · ${r.weather}
+      </div>
+    </div>
+    ${r.holes.map(h=>{
+      const hd=h.score-h.par;
+      const [cls]=hd<=-2?['eagle']:hd===-1?['birdie']:hd===0?['par-s']:hd===1?['bogey']:hd===2?['dbl']:['tpl'];
+      return `<div class="rd-hole">
+        <div class="rd-hole-hdr">
+          <div class="rd-hole-num">Hole ${h.hole}${h.name?' — '+h.name:''}${h.metres?' · '+h.metres+'m':''} · Par ${h.par}${h.hdcp?' · SI '+h.hdcp:''}</div>
+          <div class="rd-hole-score ${cls}">${h.score}</div>
+        </div>
+        ${h.shots.map((s,si)=>`<div class="rd-shot">
+          <div class="rd-shot-num">${si+1}</div>
+          <div class="rd-shot-info">${s.club}${s.distance?' · '+s.distance+'m':''} · ${s.type}${s.note?' — <em>'+s.note+'</em>':''}</div>
+          <div class="rd-shot-result res-${s.result}">${s.result}</div>
+        </div>`).join('')}
+      </div>`;
+    }).join('')}`;
+  document.getElementById('roundDetail').classList.add('open');
+}
+
+function calcStableford(round) {
+  // Stableford: 2pts for par, +1 for each shot under, -1 for each over, min 0
+  let pts=0;
+  const hcp=round.playingHcp||0;
+  round.holes.forEach(h=>{
+    // Extra shots from handicap: holes with hdcp <= hcp get +1 stroke
+    const extra = h.hdcp && hcp>0 ? (h.hdcp<=Math.floor(hcp)?1:0)+(hcp%1>=.5&&h.hdcp<=Math.round(hcp%1*18)?1:0) : 0;
+    const netScore=h.score-extra;
+    const diff=netScore-h.par;
+    pts+=Math.max(0,2-diff);
+  });
+  return pts;
+}
+
+function closeDetail(){document.getElementById('roundDetail').classList.remove('open');}
+
+// ══════════════════════════════════════════════
+// STROKES GAINED (vs Scratch + vs Handicap)
+// ══════════════════════════════════════════════
+function calcSG(vsHcp=false) {
+  // SG baseline: scratch = 0. Hcp adjustment: a 18-hcp player is expected to be +0.22/shot worse than scratch on average.
+  // We shift the baseline by hcp/total_shots
+  const c={ott:[],app:[],arg:[],putt:[]};
+
+  rounds.forEach(r => {
+    const hcp = vsHcp && r.playingHcp!=null ? r.playingHcp : 0;
+    const allShots = r.holes.flatMap(h=>h.shots);
+    const hcpAdjPerShot = allShots.length>0 ? (hcp/allShots.length)*0.15 : 0;
+
+    r.holes.forEach(h=>h.shots.forEach((s,si)=>{
+      if((s.lie||s.type||'')==='Recovery') return; // exclude recovery shots
+      const q=(SG_Q[s.result]??0)+hcpAdjPerShot;
+      const lie=s.lie||'';
+      // Categorise by lie
+      if(lie==='Tee') c.ott.push(q);
+      else if(['Fairway','Rough'].includes(lie)) c.app.push(q);
+      else if(['Bunker','Fringe'].includes(lie)) c.arg.push(q);
+      else if(lie==='Green') c.putt.push(q);
+      // fallback for old data using type field
+      else {
+        const t=s.type||'';
+        if(t==='Drive') c.ott.push(q);
+        else if(['Fairway Wood','Long Iron','Mid Iron','Short Iron'].includes(t)) c.app.push(q);
+        else if(['Chip','Pitch','Bunker','Wedge'].includes(t)) c.arg.push(q);
+        else if(t==='Putt') c.putt.push(q);
+      }
+    }));
+  });
+  const avg=a=>a.length?a.reduce((x,y)=>x+y,0)/a.length:null;
+  return{ott:avg(c.ott),app:avg(c.app),arg:avg(c.arg),putt:avg(c.putt)};
+}
+
+function avgHcp() {
+  const hcps=rounds.filter(r=>r.playingHcp!=null).map(r=>r.playingHcp);
+  return hcps.length?hcps.reduce((a,b)=>a+b,0)/hcps.length:null;
+}
+
+// ══════════════════════════════════════════════
+// RENDER STATS — Golfity-style comprehensive view
+// ══════════════════════════════════════════════
+function renderStats() {
+  const statsEl = document.getElementById('statsGrid');
+  if(!rounds.length){
+    statsEl.innerHTML=`<div class="empty" style="grid-column:1/-1"><div class="ei">📊</div>Log some rounds first!</div>`;
+    ['sgGrid','clubBody','typeGrid'].forEach(id=>{ const el=document.getElementById(id); if(el) el.innerHTML=''; });
+    const sn=document.getElementById('sgNote'); if(sn) sn.textContent='';
+    const sb=document.getElementById('sgHcpBadge'); if(sb) sb.style.display='none';
+    return;
+  }
+
+  const ah=rounds.flatMap(r=>r.holes);
+  // Exclude recovery shots from stats
+  const as=ah.flatMap(h=>h.shots).filter(s=>(s.lie||s.type||'')!=='Recovery');
+  const scores=rounds.map(r=>r.score), diffs=rounds.map(r=>r.score-r.par);
+  const avg=a=>a.length?a.reduce((x,y)=>x+y,0)/a.length:0;
+  const hcpRounds=rounds.filter(r=>r.playingHcp!=null);
+  const avgH=avgHcp();
+  const netScores=hcpRounds.map(r=>r.score-Math.round(r.playingHcp));
+  const avgNet=netScores.length?avg(netScores):null;
+  const tournamentRounds=rounds.filter(r=>r.roundType==='tournament');
+
+  // ── Putts ──
+  const puttShots=as.filter(s=>(s.lie||s.type||'')==='Green'||(s.type||'')==='Putt');
+  const totalPutts=puttShots.length;
+  const holesWithPutts=ah.filter(h=>h.shots.some(s=>(s.lie||s.type||'')==='Green'||(s.type||'')==='Putt'));
+  const puttsPerHole=holesWithPutts.length?totalPutts/holesWithPutts.length:0;
+  const oneP=holesWithPutts.filter(h=>{const p=h.shots.filter(s=>(s.lie||s.type||'')==='Green'||(s.type||'')==='Putt');return p.length===1;}).length;
+  const threeP=holesWithPutts.filter(h=>{const p=h.shots.filter(s=>(s.lie||s.type||'')==='Green'||(s.type||'')==='Putt');return p.length>=3;}).length;
+
+  // ── GIR — hole where player reached green in regulation (par minus 2 putts) ──
+  const girCount=ah.filter(h=>{
+    const puttCount=h.shots.filter(s=>(s.lie||s.type||'')==='Green'||(s.type||'')==='Putt').length;
+    const shotsForGIR=h.par-2;
+    const nonPuttShots=h.shots.length-puttCount;
+    return nonPuttShots<=shotsForGIR;
+  }).length;
+  const girPct=ah.length?Math.round(girCount/ah.length*100):0;
+
+  // ── Fairways hit (par 4+5 only, tee shots) ──
+  const fwHoles=ah.filter(h=>h.par>=4);
+  const fwHit=fwHoles.filter(h=>{
+    const teeShot=h.shots[0];
+    return teeShot&&(teeShot.lie==='Tee')&&h.shots[1]&&(h.shots[1].lie==='Fairway');
+  }).length;
+  const fwPct=fwHoles.length?Math.round(fwHit/fwHoles.length*100):0;
+
+  // ── Scoring distribution ──
+  const eagles=ah.filter(h=>h.score<=h.par-2).length;
+  const birdies=ah.filter(h=>h.score===h.par-1).length;
+  const pars=ah.filter(h=>h.score===h.par).length;
+  const bogeys=ah.filter(h=>h.score===h.par+1).length;
+  const dbl=ah.filter(h=>h.score===h.par+2).length;
+  const triplePlus=ah.filter(h=>h.score>=h.par+3).length;
+
+  // ── Score trend (last 5 rounds) ──
+  const recent5=rounds.slice(0,5).reverse();
+  const trendHtml=recent5.length>1?`
+    <div class="stat-trend">
+      ${recent5.map(r=>{const d=r.score-r.par;const cls=d<0?'t-birdie':d===0?'t-par':d<=2?'t-bogey':'t-dbl';return`<div class="trend-bar-wrap"><div class="trend-score ${cls}">${d===0?'E':(d>0?'+':'')+d}</div><div class="trend-date">${fmtDate(r.date).split(' ')[0]+' '+fmtDate(r.date).split(' ')[1]}</div></div>`;}).join('')}
+    </div>`:'';
+
+  statsEl.innerHTML=`
+    <!-- Score Overview -->
+    <div class="gstat-section" style="grid-column:1/-1">
+      <div class="gstat-row">
+        <div class="gstat-big">
+          <div class="gstat-val">${avg(scores).toFixed(1)}</div>
+          <div class="gstat-lbl">Avg Score</div>
+        </div>
+        <div class="gstat-big">
+          <div class="gstat-val ${avg(diffs)<=0?'sg-pos':'sg-neg'}">${avg(diffs)>=0?'+':''}${avg(diffs).toFixed(1)}</div>
+          <div class="gstat-lbl">Avg vs Par</div>
+        </div>
+        <div class="gstat-big">
+          <div class="gstat-val">${Math.min(...scores)}</div>
+          <div class="gstat-lbl">Best Round</div>
+        </div>
+        ${avgH!=null?`<div class="gstat-big"><div class="gstat-val" style="color:var(--gl)">${avgH.toFixed(1)}</div><div class="gstat-lbl">Avg Hcp</div></div>`:''}
+        ${avgNet!=null?`<div class="gstat-big"><div class="gstat-val">${avgNet.toFixed(1)}</div><div class="gstat-lbl">Avg Net</div></div>`:''}
+      </div>
+      ${trendHtml}
+    </div>
+
+    <!-- Scoring Distribution donut-style -->
+    <div class="gstat-section" style="grid-column:1/-1">
+      <div class="gstat-sec-title">Scoring Distribution <span style="font-size:.65rem;color:var(--tl)">${ah.length} holes</span></div>
+      <div class="score-dist">
+        ${[[eagles,'Eagles','#9b59b6'],[birdies,'Birdies','#e74c3c'],[pars,'Pars','var(--gl)'],
+           [bogeys,'Bogeys','var(--gold)'],[dbl,'Doubles','#e67e22'],[triplePlus,'Triple+','#c0392b']]
+          .filter(([n])=>n>0)
+          .map(([n,l,c])=>{
+            const pct=ah.length?Math.round(n/ah.length*100):0;
+            return`<div class="sdist-item">
+              <div class="sdist-bar-wrap"><div class="sdist-bar" style="height:${Math.max(pct*1.8,4)}px;background:${c}"></div></div>
+              <div class="sdist-num" style="color:${c}">${n}</div>
+              <div class="sdist-lbl">${l}</div>
+              <div class="sdist-pct">${pct}%</div>
+            </div>`;}).join('')}
+      </div>
+    </div>
+
+    <!-- Approach & Fairways -->
+    <div class="gstat-section">
+      <div class="gstat-sec-title">Ball Striking</div>
+      <div class="gstat-kpi-row">
+        <div class="gstat-kpi">
+          <div class="kpi-ring" style="--pct:${girPct}">
+            <svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="15.9" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="3"/><circle cx="18" cy="18" r="15.9" fill="none" stroke="var(--gl)" stroke-width="3" stroke-dasharray="${girPct} 100" stroke-dashoffset="25" stroke-linecap="round" transform="rotate(-90 18 18)"/></svg>
+            <div class="kpi-val">${girPct}%</div>
+          </div>
+          <div class="kpi-lbl">GIR</div>
+          <div class="kpi-sub">${girCount}/${ah.length} holes</div>
+        </div>
+        <div class="gstat-kpi">
+          <div class="kpi-ring">
+            <svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="15.9" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="3"/><circle cx="18" cy="18" r="15.9" fill="none" stroke="var(--gold)" stroke-width="3" stroke-dasharray="${fwPct} 100" stroke-dashoffset="25" stroke-linecap="round" transform="rotate(-90 18 18)"/></svg>
+            <div class="kpi-val">${fwPct}%</div>
+          </div>
+          <div class="kpi-lbl">Fairways</div>
+          <div class="kpi-sub">${fwHit}/${fwHoles.length} holes</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Putting -->
+    <div class="gstat-section">
+      <div class="gstat-sec-title">Putting</div>
+      <div class="gstat-kpi-row">
+        <div class="gstat-kpi">
+          <div class="kpi-big">${puttsPerHole.toFixed(2)}</div>
+          <div class="kpi-lbl">Putts / Hole</div>
+          <div class="kpi-sub">${totalPutts} total</div>
+        </div>
+        <div class="gstat-kpi">
+          <div class="kpi-big" style="color:var(--gl)">${oneP}</div>
+          <div class="kpi-lbl">1-Putts</div>
+        </div>
+        <div class="gstat-kpi">
+          <div class="kpi-big" style="color:#e74c3c">${threeP}</div>
+          <div class="kpi-lbl">3-Putts</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Rounds played -->
+    <div class="gstat-section">
+      <div class="gstat-sec-title">Activity</div>
+      <div class="gstat-kpi-row" style="flex-wrap:wrap">
+        <div class="gstat-kpi"><div class="kpi-big">${rounds.length}</div><div class="kpi-lbl">Rounds</div></div>
+        ${tournamentRounds.length?`<div class="gstat-kpi"><div class="kpi-big" style="color:var(--gold)">${tournamentRounds.length}</div><div class="kpi-lbl">Tournament</div></div>`:''}
+        <div class="gstat-kpi"><div class="kpi-big">${ah.length}</div><div class="kpi-lbl">Holes</div></div>
+        <div class="gstat-kpi"><div class="kpi-big">${as.length}</div><div class="kpi-lbl">Shots</div></div>
+      </div>
+    </div>
+  `;
+
+  // ── SG section ──
+  const sgScratch=calcSG(false);
+  const hasHcp=hcpRounds.length>0;
+  const sgHcp=hasHcp?calcSG(true):null;
+  const sgBadge=document.getElementById('sgHcpBadge');
+  if(sgBadge) sgBadge.style.display=hasHcp?'':'none';
+
+  const sgItems=[
+    {k:'ott',l:'Off the Tee',d:'Tee shots',icon:'🏌️'},
+    {k:'app',l:'Approach',d:'Fairway & rough',icon:'🎯'},
+    {k:'arg',l:'Around Green',d:'Bunker & fringe',icon:'🌀'},
+    {k:'putt',l:'Putting',d:'On the green',icon:'⛳'}
+  ];
+  const allSGVals=[...sgItems.map(x=>sgScratch[x.k]),...(sgHcp?sgItems.map(x=>sgHcp[x.k]):[])].filter(v=>v!=null);
+  const mx=Math.max(...allSGVals.map(Math.abs),.3);
+
+  const sgEl=document.getElementById('sgGrid');
+  sgEl.innerHTML=sgItems.map(item=>{
+    const vs=sgScratch[item.k], vh=sgHcp?sgHcp[item.k]:null;
+    if(vs===null) return `<div class="sg-card"><div class="sg-lbl">${item.icon} ${item.l}</div><div class="sg-val" style="color:var(--tl)">—</div><div class="sg-desc">Need more data</div></div>`;
+    const pos=vs>=0;
+    const barW=Math.min(Math.abs(vs)/mx*100,100);
+    return `<div class="sg-card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+        <div class="sg-lbl">${item.icon} ${item.l}</div>
+        <div class="sg-val ${pos?'sg-pos':'sg-neg'}">${pos?'+':''}${vs.toFixed(2)}</div>
+      </div>
+      <div class="sg-desc">${item.d}</div>
+      <div class="sg-bar-w" style="margin-top:8px">
+        <div class="sg-bar ${pos?'sg-bar-p':'sg-bar-n'}" style="width:${barW}%"></div>
+      </div>
+      ${vh!=null?`<div style="display:flex;align-items:center;justify-content:space-between;margin-top:6px">
+        <div style="font-size:.63rem;color:var(--gl)">vs Hcp</div>
+        <div style="font-size:.78rem;font-weight:600;color:${vh>=0?'var(--gl)':'#e74c3c'}">${vh>=0?'+':''}${vh.toFixed(2)}</div>
+      </div>`:''}
+    </div>`;
+  }).join('');
+
+  const sgNote=document.getElementById('sgNote');
+  if(sgNote) sgNote.textContent=hasHcp
+    ?`vs Scratch compares to par baseline. vs Hcp adjusts for your avg handicap of ${avgH.toFixed(1)}.`
+    :'Add your playing handicap to also compare vs your expected level.';
+
+  // ── Club table (exclude recovery) ──
+  const cm={};
+  as.filter(s=>(s.lie||s.type||'')!=='Recovery').forEach(s=>{
+    if(s.club&&s.distance){if(!cm[s.club])cm[s.club]=[];cm[s.club].push(s.distance);}
+  });
+  const avg2=a=>a.reduce((x,y)=>x+y,0)/a.length;
+  const clubEl=document.getElementById('clubBody');
+  if(clubEl) clubEl.innerHTML=CLUBS.filter(c=>cm[c]?.length>0).map(c=>{
+    const d=cm[c];
+    return `<tr><td class="cname">${c}</td><td>${avg2(d).toFixed(0)}</td><td>${Math.min(...d)}</td><td>${Math.max(...d)}</td><td>${d.length}</td></tr>`;
+  }).join('')||'<tr><td colspan="5" style="color:var(--tl);text-align:center;padding:16px">Log distances to build your profile</td></tr>';
+
+  // ── Lie breakdown (replaces shot type) ──
+  const lm={};
+  ah.flatMap(h=>h.shots).forEach(s=>{
+    const l=s.lie||s.type||'Unknown';
+    lm[l]=(lm[l]||0)+1;
+  });
+  const ltot=Object.values(lm).reduce((a,b)=>a+b,0)||1;
+  const typeEl=document.getElementById('typeGrid');
+  if(typeEl) typeEl.innerHTML=LIES.filter(l=>lm[l]).map(l=>{
+    const n=lm[l];
+    return `<div class="stat-card"><div class="stat-val">${n}</div><div class="stat-lbl">${l}<br><span style="font-size:.58rem">${(n/ltot*100).toFixed(0)}%</span></div></div>`;
+  }).join('');
+}
+
+// ══════════════════════════════════════════════
+// AI CADDIE
+// ══════════════════════════════════════════════
+async function getClubRec() {
+  const dist=document.getElementById('cDist').value;
+  if(!dist){toast('Enter a distance','err');return;}
+  const el=document.getElementById('recResp');
+  el.style.display='block';el.className='ai-resp loading';el.textContent='🤔 Analysing your data…';
+  const h=avgHcp();
+  const prompt=`Expert golf caddie AI. Bag: ${CLUBS.join(', ')}. All distances in metres.
+${h!=null?`Player's average handicap: ${h.toFixed(1)}.`:''}
+
+PERSONAL CLUB DISTANCES:\n${clubProfile()||'No data — use typical amateur metres.'}
+STROKES GAINED: ${sgStr()}
+
+SHOT: ${dist}m to pin · Lie: ${document.getElementById('cLie').value} · Wind: ${document.getElementById('cWind').value} · Elevation: ${document.getElementById('cElev').value}
+
+Give a specific club recommendation from their bag (3–4 sentences). Reference their personal distances. Account for all conditions. Use metres.`;
+  try{const r=await claude(prompt);el.className='ai-resp';el.textContent=r;}
+  catch{el.textContent='Error reaching AI.';}
+}
+
+async function askCaddie(pre) {
+  const q=pre||document.getElementById('cQuestion').value.trim();
+  if(!q){toast('Enter a question','err');return;}
+  const el=document.getElementById('caddieResp');
+  el.style.display='block';el.className='ai-resp loading';el.textContent='🤔 Thinking…';
+  const h=avgHcp();
+  const prompt=`Golf caddie AI. Bag: ${CLUBS.join(', ')}. Distances in metres. ${h!=null?`Player avg hcp: ${h.toFixed(1)}.`:''}
+ROUNDS: ${roundStr()||'None.'}
+CLUBS:  ${clubProfile()||'No data.'}
+SG: ${sgStr()}
+QUESTION: ${q}
+Be concise, reference data, use metres. Max 220 words.`;
+  try{const r=await claude(prompt);el.className='ai-resp';el.textContent=r;}
+  catch{el.textContent='Error reaching AI.';}
+}
+
+function qp(t){
+  const h=avgHcp();
+  const p={
+    weak:'Where am I losing the most strokes and why? Be specific to my shot categories.',
+    sg:'Explain my strokes gained numbers in plain English. What do they mean for my game?',
+    gaps:'Analysing my club distances in metres, do I have any significant distance gaps in my bag?',
+    tips:'What are the 3 most impactful things I should practice to lower my scores?',
+    hcp:h!=null?`My average playing handicap is ${h.toFixed(1)}. Am I playing to my handicap? Where am I gaining or losing strokes relative to what's expected at this level?`:'What would I need to work on to reach a handicap of 18?'
+  };
+  document.getElementById('cQuestion').value=p[t]; askCaddie(p[t]);
+}
+
+// ══════════════════════════════════════════════
+// CLAUDE API
+// ══════════════════════════════════════════════
+async function claude(prompt) {
+  const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,messages:[{role:'user',content:prompt}]})});
+  const d=await r.json();
+  return d.content?.map(b=>b.text||'').join('')||'No response';
+}
+async function claudeNotion(prompt) {
+  const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,mcp_servers:[{type:'url',url:'https://mcp.notion.com/mcp',name:'notion-mcp'}],messages:[{role:'user',content:prompt}]})});
+  const d=await r.json();
+  return(d.content||[]).map(b=>b.text||'').filter(Boolean).join('');
+}
+
+// ══════════════════════════════════════════════
+// DATA HELPERS
+// ══════════════════════════════════════════════
+function setRoundType(t){
+  document.getElementById('activeRoundType').value=t;
+  document.querySelectorAll('.round-type-btn').forEach(b=>{
+    b.classList.toggle('active', b.id==='rtb-'+t);
+  });
+}
+
+function clubProfile(){
+  const all=rounds.flatMap(r=>r.holes.flatMap(h=>h.shots))
+    .filter(s=>(s.lie||s.type||'')!=='Recovery'); // exclude recovery
+  const m={};all.forEach(s=>{if(s.club&&s.distance){if(!m[s.club])m[s.club]=[];m[s.club].push(s.distance);}});
+  if(!Object.keys(m).length)return null;
+  const avg=a=>a.reduce((x,y)=>x+y,0)/a.length;
+  return CLUBS.filter(c=>m[c]?.length>0).map(c=>`${c}: avg ${avg(m[c]).toFixed(0)}m (${m[c].length} shots, ${Math.min(...m[c])}–${Math.max(...m[c])}m)`).join('\n');
+}
+function roundStr(){
+  if(!rounds.length)return null;
+  const avg=a=>a.reduce((x,y)=>x+y,0)/a.length, diffs=rounds.map(r=>r.score-r.par);
+  return rounds.slice(0,5).map(r=>{const d=r.score-r.par;return `${r.course}(${r.date}):${r.score}(${d>=0?'+':''}${d})${r.playingHcp!=null?' Hcp'+r.playingHcp:''} ${r.tee||'Blue'}tee`;}).join(' | ')
+    +` | AvgVsPar:${avg(diffs)>=0?'+':''}${avg(diffs).toFixed(1)} (${rounds.length}rounds)`;
+}
+function sgStr(){
+  if(!rounds.length)return'No data.';
+  const sg=calcSG(false),f=v=>v===null?'N/A':(v>=0?'+':'')+v.toFixed(2);
+  return`OTT=${f(sg.ott)} APP=${f(sg.app)} ARG=${f(sg.arg)} Putt=${f(sg.putt)}`;
+}
+
+// ══════════════════════════════════════════════
+// NOTION
+// ══════════════════════════════════════════════
+function updateNotionPill(){
+  const p=document.getElementById('notionPill'),l=document.getElementById('notionLbl');
+  if(notionCfg){p.className='notion-pill on';l.textContent='Notion ✓';}
+  else{p.className='notion-pill off';l.textContent='Connect Notion';}
+}
+// ══════════════════════════════════════════════
+// NOTION WIZARD
+// ══════════════════════════════════════════════
+function openNotion(){
+  document.getElementById('notionOverlay').style.display='flex';
+  // Pre-fill if already connected
+  if(notionCfg){
+    document.getElementById('nToken').value=notionCfg.token||'';
+    document.getElementById('nDbId').value=notionCfg.dbId||'';
+    // Jump straight to sync tab if already set up
+    showNotionStep(4);
+    document.getElementById('notionConnectedBadge').style.display='block';
+    document.getElementById('notionErrorBadge').style.display='none';
+  } else {
+    showNotionStep(1);
+  }
+}
+
+function showNotionStep(n){
+  [1,2,3,4].forEach(i=>{
+    document.getElementById('nstep'+i).classList.toggle('active', i===n);
+    document.getElementById('ntab'+i).classList.toggle('active', i===n);
+  });
+}
+
+async function saveAndTestNotion(){
+  const t=document.getElementById('nToken').value.trim();
+  const d=document.getElementById('nDbId').value.trim();
+  if(!t||!t.startsWith('secret_')){
+    toast('Token must start with secret_','err'); return;
+  }
+  if(!d||d.length<30){
+    toast('Database ID looks too short — should be 32 characters','err'); return;
+  }
+  // Save immediately
+  notionCfg={token:t,dbId:d};
+  localStorage.setItem('gcai_notion',JSON.stringify(notionCfg));
+  updateNotionPill();
+  // Move to step 4 and show testing state
+  showNotionStep(4);
+  document.getElementById('notionConnectedBadge').style.display='none';
+  document.getElementById('notionErrorBadge').style.display='none';
+  toast('Testing connection…','inf');
+  try{
+    await claudeNotion('Can you access the Notion database with ID: '+d+'? Just reply yes or no.');
+    document.getElementById('notionConnectedBadge').style.display='block';
+    toast('✓ Notion connected!','ok');
+  }catch(e){
+    document.getElementById('notionErrorBadge').style.display='block';
+    // Don't wipe the saved config — user can retry
+  }
+}
+function openSettings(){
+  document.getElementById('settingsOverlay').style.display='flex';
+  refreshSettingsUI();
+}
+function closeSettings(){document.getElementById('settingsOverlay').style.display='none';}
+function closeSettingsOut(e){if(e.target.id==='settingsOverlay')closeSettings();}
+
+function refreshSettingsUI(){
+  const k=getRapidKey();
+  const inp=document.getElementById('rapidKeyInput');
+  const ks=document.getElementById('rapidKeyStatus');
+  if(inp) inp.value='';  // always blank — password field, don't show masked
+  if(ks){
+    if(k){
+      ks.textContent='✓ Key saved (ends …'+k.slice(-4)+') — real course database active';
+      ks.style.color='var(--gl)';
+    } else {
+      ks.textContent='No key saved — using web search as fallback.';
+      ks.style.color='var(--tl)';
+    }
+  }
+}
+
+function saveRapidKey(){
+  const inp=document.getElementById('rapidKeyInput');
+  const val=inp.value.trim();
+  if(!val){toast('Paste your key first','err');return;}
+  localStorage.setItem('gcai_rapidkey',val);
+  inp.value='';
+  refreshSettingsUI();
+  toast('RapidAPI key saved! Course search is now live.','ok');
+}
+
+async function testRapidKey(){
+  const k=getRapidKey();
+  if(!k){toast('Save a key first','err');return;}
+  toast('Testing key…','inf');
+  try{
+    const url='https://golf-course-finder.p.rapidapi.com/courses?name=pebble+beach&limit=1';
+    const r=await fetch(url,{headers:{'x-rapidapi-host':'golf-course-finder.p.rapidapi.com','x-rapidapi-key':k}});
+    if(r.ok){toast('✓ Key works! Course database connected.','ok');}
+    else{toast('Key rejected ('+r.status+') — check you subscribed to Golf Course Finder','err');}
+  }catch(e){toast('Network error — check connection','err');}
+}
+
+function clearRapidKey(){
+  localStorage.removeItem('gcai_rapidkey');
+  const inp=document.getElementById('rapidKeyInput');
+  if(inp) inp.value='';
+  refreshSettingsUI();
+  toast('API key cleared','inf');
+}
+function closeNotion(){document.getElementById('notionOverlay').style.display='none';}
+function closeNotionOut(e){if(e.target.id==='notionOverlay')closeNotion();}
+function saveNotion(){
+  const t=document.getElementById('nToken').value.trim(),d=document.getElementById('nDbId').value.trim();
+  if(!t||!d){toast('Fill both fields','err');return;}
+  notionCfg={token:t,dbId:d};localStorage.setItem('gcai_notion',JSON.stringify(notionCfg));
+  updateNotionPill();toast('Notion saved!','ok');
+}
+async function testNotion(){
+  if(!notionCfg){toast('Save first','err');return;}
+  toast('Testing…','inf');
+  try{await claudeNotion(`Can you access Notion database ${notionCfg.dbId}? Just say yes or no.`);toast('✓ Notion connected','ok');}
+  catch{toast('Connection failed','err');}
+}
+
+async function saveRoundToNotion(round,silent=false){
+  if(!notionCfg)return;
+  const diff=round.score-round.par,ds=diff===0?'E':(diff>0?'+'+diff:String(diff));
+  const all=round.holes.flatMap(h=>h.shots);
+  const clubs=[...new Set(all.map(s=>s.club).filter(Boolean))].join(', ');
+  const putts=all.filter(s=>s.type==='Putt').length;
+  const holeDetails=round.holes.map(h=>`H${h.hole}(Par${h.par}${h.metres?' '+h.metres+'m':''}):${h.score}|${h.shots.map(s=>`${s.club}${s.distance?' '+s.distance+'m':''} ${s.type}[${s.result}]${s.note?' '+s.note:''}`).join(';')}`).join('\n');
+  try{
+    await claudeNotion(`Save golf round to Notion database (ID: ${notionCfg.dbId}). Round ID: ${round.id}.
+Course:${round.course}, Date:${round.date}, Score:${round.score}(${ds} vs par ${round.par}), Tee:${round.tee||'Blue'}, Hcp:${round.playingHcp??'N/A'}, Holes:${round.holes.length}, Weather:${round.weather}, Putts:${putts}, Clubs:${clubs}.
+HOLES:\n${holeDetails}
+Use round ID ${round.id} as unique key to prevent duplicates.`);
+    if(!silent)toast('✓ Saved to Notion','ok');
+  }catch{if(!silent)toast('Notion save failed','err');}
+}
+
+async function exportAll(){
+  if(!notionCfg){toast('Connect Notion first','err');return;}
+  if(!rounds.length){toast('No rounds','inf');return;}
+  const s=document.getElementById('expStatus');s.style.display='block';s.textContent=`Exporting ${rounds.length} rounds…`;
+  document.getElementById('expBtn').disabled=true;
+  let ok=0,fail=0;
+  for(const r of rounds){try{await saveRoundToNotion(r,true);ok++;}catch{fail++;}s.textContent=`${ok}/${rounds.length} exported…`;}
+  s.textContent=`✓ Done: ${ok} saved${fail?`, ${fail} failed`:''}`;document.getElementById('expBtn').disabled=false;
+  toast(`Exported ${ok} rounds`,'ok');
+}
+
+async function importFromNotion(){
+  if(!notionCfg){toast('Connect Notion first','err');return;}
+  const s=document.getElementById('impStatus');s.style.display='block';s.textContent='Fetching…';
+  document.getElementById('impBtn').disabled=true;
+  try{
+    const raw=await claudeNotion(`Query ALL pages in Notion database (ID: ${notionCfg.dbId}) and return ONLY a JSON array (no markdown). Each: {"id":"","course":"","date":"YYYY-MM-DD","score":0,"par":72,"weather":"","tee":"Blue","playingHcp":null,"holes":[],"savedAt":""}. Return [] if empty.`);
+    let imported;try{imported=JSON.parse(raw.replace(/```json|```/g,'').trim());}catch{s.textContent='⚠️ Parse failed.';document.getElementById('impBtn').disabled=false;return;}
+    if(!Array.isArray(imported)){s.textContent='⚠️ Bad format.';document.getElementById('impBtn').disabled=false;return;}
+    const eIds=new Set(rounds.map(r=>r.id)),eKeys=new Set(rounds.map(r=>`${r.course}|${r.date}|${r.score}`));
+    let added=0,skip=0;
+    imported.forEach(r=>{
+      if(!r.course||!r.date||r.score==null){skip++;return;}
+      if(!r.holes)r.holes=[];if(!r.id)r.id=Date.now()+Math.random().toString(36).slice(2);
+      if(!r.par)r.par=72;if(!r.weather)r.weather='Unknown';if(!r.savedAt)r.savedAt=new Date().toISOString();
+      const k=`${r.course}|${r.date}|${r.score}`;
+      if(eIds.has(r.id)||eKeys.has(k)){skip++;return;}
+      rounds.push(r);eIds.add(r.id);eKeys.add(k);added++;
+    });
+    rounds.sort((a,b)=>new Date(b.date)-new Date(a.date));
+    localStorage.setItem('gcai_rounds',JSON.stringify(rounds));
+    renderRounds();renderStats();
+    s.textContent=`✓ ${added} imported${skip?`, ${skip} skipped`:''}`;toast(`Imported ${added}`,'ok');
+  }catch{s.textContent='⚠️ Import failed.';toast('Import failed','err');}
+  document.getElementById('impBtn').disabled=false;
+}
+
+function clearLocal(){
+  if(!confirm('Clear all local rounds?'))return;
+  rounds=[];localStorage.setItem('gcai_rounds','[]');renderRounds();renderStats();toast('Cleared','inf');
+}
+
+// ══════════════════════════════════════════════
+// UTILS
+// ══════════════════════════════════════════════
+function toast(msg,type='inf'){
+  const w=document.getElementById('toastWrap');
+  const el=document.createElement('div');el.className=`toast ${type}`;el.textContent=msg;
+  w.appendChild(el);setTimeout(()=>el.remove(),3800);
+}
+function fmtDate(d){return new Date(d+'T12:00:00').toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'});}
+</script>
+<script>
+// ── Generate app icon as canvas PNG and set as apple-touch-icon ──
+(function(){
+  try {
+    const size = 192;
+    const c = document.createElement('canvas');
+    c.width = size; c.height = size;
+    const ctx = c.getContext('2d');
+
+    // Background — deep green rounded rect
+    ctx.fillStyle = '#1a3a2a';
+    ctx.beginPath();
+    ctx.roundRect(0,0,size,size,36);
+    ctx.fill();
+
+    // Gold circle
+    ctx.fillStyle = '#c9a84c';
+    ctx.beginPath();
+    ctx.arc(size/2, size/2-10, 62, 0, Math.PI*2);
+    ctx.fill();
+
+    // White inner circle
+    ctx.fillStyle = '#f5f0e8';
+    ctx.beginPath();
+    ctx.arc(size/2, size/2-10, 50, 0, Math.PI*2);
+    ctx.fill();
+
+    // Golf hole (dark circle)
+    ctx.fillStyle = '#1a3a2a';
+    ctx.beginPath();
+    ctx.arc(size/2+8, size/2-2, 7, 0, Math.PI*2);
+    ctx.fill();
+
+    // Flag pole
+    ctx.strokeStyle = '#1a3a2a';
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(size/2+8, size/2-2);
+    ctx.lineTo(size/2+8, size/2-38);
+    ctx.stroke();
+
+    // Flag
+    ctx.fillStyle = '#c0392b';
+    ctx.beginPath();
+    ctx.moveTo(size/2+8, size/2-38);
+    ctx.lineTo(size/2+26, size/2-30);
+    ctx.lineTo(size/2+8, size/2-22);
+    ctx.fill();
+
+    // Text "GC" at bottom
+    ctx.fillStyle = '#c9a84c';
+    ctx.font = 'bold 22px Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('GolfCaddie', size/2, size-18);
+
+    const dataUrl = c.toDataURL('image/png');
+
+    // Set apple-touch-icon
+    document.getElementById('appIcon').href = dataUrl;
+
+    // Store for manifest
+    window._appIconDataUrl = dataUrl;
+
+    // Create and inject manifest dynamically
+    const manifest = {
+      name: 'GolfCaddie AI',
+      short_name: 'GolfCaddie',
+      description: 'AI-powered golf round tracker with Strokes Gained analytics',
+      start_url: '.',
+      display: 'standalone',
+      background_color: '#1a3a2a',
+      theme_color: '#1a3a2a',
+      orientation: 'portrait',
+      icons: [
+        { src: dataUrl, sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
+        { src: dataUrl, sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
+      ]
+    };
+    const blob = new Blob([JSON.stringify(manifest)], {type:'application/json'});
+    const manifestUrl = URL.createObjectURL(blob);
+    const link = document.createElement('link');
+    link.rel = 'manifest'; link.href = manifestUrl;
+    document.head.appendChild(link);
+
+  } catch(e) { console.log('Icon generation skipped:', e.message); }
+
+  // ── Register service worker for offline use ──
+  if ('serviceWorker' in navigator) {
+    const swCode = `
+const CACHE = 'golfcaddie-v1';
+const ASSETS = ['/'];
+self.addEventListener('install', e => {
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)));
+});
+self.addEventListener('fetch', e => {
+  e.respondWith(caches.match(e.request).then(r => r || fetch(e.request)));
+});`;
+    const swBlob = new Blob([swCode], {type:'application/javascript'});
+    const swUrl  = URL.createObjectURL(swBlob);
+    navigator.serviceWorker.register(swUrl).catch(()=>{});
+  }
+})();
+</script>
+</body>
+</html>
