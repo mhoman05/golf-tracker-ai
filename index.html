@@ -4,7 +4,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
-<title>GolfCaddie AI v67</title>
+<title>GolfCaddie AI v69</title>
 
 <!-- PWA / Home Screen -->
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -439,6 +439,7 @@ select.finput{-webkit-appearance:none;appearance:none;background-image:url("data
     <button class="tab-btn active" onclick="goTab('setup')"  id="tb-setup">🏌️ New Round</button>
     <button class="tab-btn"        onclick="goTab('rounds')" id="tb-rounds">📋 Rounds</button>
     <button class="tab-btn"        onclick="goTab('stats')"  id="tb-stats">📊 Stats</button>
+    <button class="tab-btn"        onclick="goTab('practice')" id="tb-practice">🎯 Practice</button>
     <button class="tab-btn"        onclick="goTab('caddie')" id="tb-caddie">🤖 Caddie</button>
   </div>
 
@@ -559,7 +560,7 @@ select.finput{-webkit-appearance:none;appearance:none;background-image:url("data
   <div class="screen" id="screen-hole">
     <div class="progress-strip"><div class="progress-fill" id="progressFill"></div></div>
     <div style="display:flex;gap:6px;padding:5px 12px;background:rgba(0,0,0,.15);flex-shrink:0;align-items:center">
-      <span style="font-size:.62rem;color:var(--tl)" id="holeWindDisplay">🌬️ —</span>
+      <span style="font-size:.62rem;color:var(--tl)" id="holeWindDisplay">🌬️ —</span> <span style="font-size:.62rem;color:var(--gold)" id="holeFocusDisplay"></span>
       <span style="font-size:.6rem;color:var(--tl);margin-left:auto">Pin</span>
       <select id="pinPos" onchange="updateHoleGpsReadout()" style="flex:0 0 auto;width:90px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);border-radius:6px;color:var(--cream);font-size:.7rem;padding:3px 5px">
         <option value="">—</option><option>Left</option><option>Centre</option>
@@ -640,6 +641,11 @@ select.finput{-webkit-appearance:none;appearance:none;background-image:url("data
       </div></div></details>
 
     </div>
+  </div>
+
+  <!-- ══ PRACTICE ══ -->
+  <div class="screen" id="screen-practice">
+    <div class="scroll"><div id="practiceBody"></div></div>
   </div>
 
   <!-- ══ CADDIE ══ -->
@@ -1289,8 +1295,324 @@ window.onload = function() {
 // ══════════════════════════════════════════════
 // TABS
 // ══════════════════════════════════════════════
+// ══════════════════════════════════════════════
+// PRACTICE — "working on" focus + lesson log (notes, drills, video links)
+// ══════════════════════════════════════════════
+// ══════════════════════════════════════════════
+// SIMULATOR SESSIONS — import a launch-monitor CSV (Foresight etc.), compare numbers over time
+// ══════════════════════════════════════════════
+var SIM_METRICS = [
+  { k:'carry',     l:'Carry',            u:'m',   d:0, dist:true },
+  { k:'total',     l:'Total distance',   u:'m',   d:0, dist:true },
+  { k:'ballSpeed', l:'Ball speed',       u:'spd', d:1, speed:true },
+  { k:'clubSpeed', l:'Club speed',       u:'spd', d:1, speed:true },
+  { k:'smash',     l:'Smash factor',     u:'',    d:2 },
+  { k:'launch',    l:'Launch angle',     u:'°',   d:1 , neutral:true },
+  { k:'spin',      l:'Spin rate',        u:'rpm', d:0 , neutral:true },
+  { k:'aoa',       l:'Angle of attack',  u:'°',   d:1 , neutral:true },
+  { k:'path',      l:'Club path',        u:'°',   d:1 , neutral:true },
+  { k:'face',      l:'Face angle',       u:'°',   d:1 , neutral:true },
+  { k:'offline',   l:'Offline (avg)',    u:'m',   d:1, dist:true, lowerBetter:true },
+  { k:'carrySd',   l:'Carry spread (SD)',u:'m',   d:1, dist:true, lowerBetter:true }
+];
+var SIM_SYN = {
+  club:      ['club','clubtype','clubname','clubused'],
+  carry:     ['carry','carrydistance','carrydist'],
+  total:     ['total','totaldistance','totaldist'],
+  ballSpeed: ['ballspeed','ballvelocity'],
+  clubSpeed: ['clubspeed','clubheadspeed','headspeed','chs'],
+  smash:     ['smashfactor','smash'],
+  launch:    ['launchangle','verticallaunchangle','vla','launch'],
+  spin:      ['totalspin','spinrate','spin','backspin'],
+  aoa:       ['angleofattack','aoa','attackangle'],
+  path:      ['clubpath','path'],
+  face:      ['faceangle','clubface','facetotarget'],
+  offline:   ['offline','carryside','sidedistance','carryoffline','totaloffline','lateral']
+};
+var _simImport = null;
+function getSim(){ var s=null; try{ s=JSON.parse(localStorage.getItem('gcai_sim')||'null'); }catch(e){} s=s||{}; s.sessions=s.sessions||[]; return s; }
+function saveSim(s){ try{ localStorage.setItem('gcai_sim',JSON.stringify(s)); }catch(e){ toast('Could not save (storage full?)','err'); } }
+function simSpeedUnit(){ return localStorage.getItem('gcai_sim_speed')==='kmh' ? 'kmh' : 'mph'; }
+function simFmt(m, v){
+  if(v==null || isNaN(v)) return '—';
+  if(m.speed && simSpeedUnit()==='mph') v=v/1.609344;
+  return v.toFixed(m.d);
+}
+function simUnit(m){ return m.u==='spd' ? (simSpeedUnit()==='mph'?'mph':'km/h') : m.u; }
+function simNormHeader(h){ return String(h||'').toLowerCase().replace(/\(.*?\)/g,'').replace(/[^a-z0-9]/g,''); }
+function simParseCsv(text){
+  text=String(text||'').replace(/^﻿/,'');
+  var first=text.split(/\r?\n/).slice(0,15).join('\n');
+  var delim=[',',';','\t'].map(function(d){ return [d, first.split(d).length]; }).sort(function(a,b){ return b[1]-a[1]; })[0][0];
+  var rows=[], row=[], cur='', q=false;
+  for(var i=0;i<text.length;i++){
+    var c=text[i];
+    if(q){ if(c==='"'){ if(text[i+1]==='"'){ cur+='"'; i++; } else q=false; } else cur+=c; }
+    else if(c==='"') q=true;
+    else if(c===delim){ row.push(cur); cur=''; }
+    else if(c==='\n'||c==='\r'){ if(c==='\r'&&text[i+1]==='\n') i++; row.push(cur); cur=''; rows.push(row); row=[]; }
+    else cur+=c;
+  }
+  if(cur!==''||row.length){ row.push(cur); rows.push(row); }
+  return { rows:rows.filter(function(r){ return r.some(function(x){ return String(x).trim()!==''; }); }), delim:delim };
+}
+function simNum(v){
+  if(v==null) return null; var s=String(v).trim().replace(/[^\d,.\-+eE]/g,'');
+  if(!s) return null;
+  if(s.indexOf(',')>=0 && s.indexOf('.')<0) s=s.replace(',','.'); else s=s.replace(/,/g,'');
+  var n=parseFloat(s); return isNaN(n)?null:n;
+}
+function simNormClub(raw){
+  var s=String(raw||'').toLowerCase().trim(); if(!s) return null;
+  if(/^(d|dr|driver|1w|1 wood)$/.test(s)||/driver/.test(s)) return 'D';
+  if(/putter/.test(s)) return 'P';
+  var m;
+  if((m=s.match(/(\d)\s*[- ]?\s*(wood|w|hybrid|h)\b/))) return m[2][0]==='w' ? m[1]+'W' : null;
+  if((m=s.match(/(\d)\s*[- ]?\s*(iron|i)\b/))) return m[1]+'i';
+  if(/^\d$/.test(s)) return null;
+  if(/pitching|^pw$/.test(s)) return 'PW';
+  if(/gap|approach|^gw$|^aw$|^uw$/.test(s)) return 'GW';
+  if(/sand|^sw$/.test(s)) return 'SW';
+  if(/lob|^lw$/.test(s)) return 'LW';
+  var up=s.toUpperCase(); return CLUBS.indexOf(up)>=0 ? up : (CLUBS.indexOf(s)>=0 ? s : null);
+}
+function simLoadFile(file){
+  if(!file) return;
+  var rd=new FileReader();
+  rd.onload=function(){
+    var p=simParseCsv(rd.result), hi=-1;
+    for(var i=0;i<Math.min(p.rows.length,15);i++){ if(p.rows[i].some(function(c){ return /club/i.test(c); })){ hi=i; break; } }
+    if(hi<0){ toast('No header row with a Club column found — is this the right file?','err'); return; }
+    var headers=p.rows[hi].map(function(h){ return String(h).trim(); });
+    var norm=headers.map(simNormHeader), map={};
+    Object.keys(SIM_SYN).forEach(function(f){
+      for(var s=0;s<SIM_SYN[f].length;s++){ var ix=norm.indexOf(SIM_SYN[f][s]); if(ix>=0){ map[f]=ix; break; } }
+    });
+    var hs=headers.join(' ').toLowerCase();
+    var units={ dist:(/yd|yard/.test(hs)?'yd':'m'), speed:(/mph/.test(hs)?'mph':(/m\/s/.test(hs)?'ms':'kmh')) };
+    _simImport={ name:file.name, headers:headers, rows:p.rows.slice(hi+1), map:map, units:units };
+    renderPractice();
+    toast('Loaded '+_simImport.rows.length+' rows — check the column mapping','inf');
+  };
+  rd.readAsText(file);
+}
+function simSetMap(f,v){ if(!_simImport) return; if(v==='') delete _simImport.map[f]; else _simImport.map[f]=parseInt(v); }
+function simSetUnit(k,v){ if(_simImport) _simImport.units[k]=v; }
+function simCancelImport(){ _simImport=null; renderPractice(); }
+function simAggregate(shots){
+  var out={};
+  Object.keys(shots).forEach(function(club){
+    var list=shots[club]; if(!list.length) return;
+    var carries=list.map(function(s){ return s.carry; }).filter(function(v){ return v!=null; });
+    var use=list;
+    if(carries.length>=6){ var med=_median(carries); use=list.filter(function(s){ return s.carry==null || (s.carry>=med*0.75 && s.carry<=med*1.25); }); }
+    var o={ n:use.length };
+    SIM_METRICS.forEach(function(m){
+      if(m.k==='carrySd') return;
+      var vals=use.map(function(s){ return s[m.k]; }).filter(function(v){ return v!=null; });
+      if(!vals.length) return;
+      if(m.k==='offline') vals=vals.map(Math.abs);
+      o[m.k]=vals.reduce(function(a,b){ return a+b; },0)/vals.length;
+    });
+    var cv=use.map(function(s){ return s.carry; }).filter(function(v){ return v!=null; });
+    if(cv.length>=3){ var mean=cv.reduce(function(a,b){return a+b;},0)/cv.length; o.carrySd=Math.sqrt(cv.reduce(function(a,b){return a+(b-mean)*(b-mean);},0)/(cv.length-1)); }
+    out[club]=o;
+  });
+  return out;
+}
+function simImportConfirm(){
+  if(!_simImport) return;
+  var im=_simImport, date=(document.getElementById('simDate')||{}).value||_today(), label=((document.getElementById('simLabel')||{}).value||'').trim();
+  if(im.map.club==null){ toast('Pick the Club column','err'); return; }
+  var dm = im.units.dist==='yd' ? 0.9144 : 1;
+  var sm = im.units.speed==='mph' ? 1.609344 : (im.units.speed==='ms' ? 3.6 : 1);
+  var by={}, kept=0;
+  im.rows.forEach(function(r){
+    var club=simNormClub(r[im.map.club]); if(!club || club==='P') return;
+    var o={};
+    SIM_METRICS.forEach(function(m){
+      if(m.k==='carrySd' || im.map[m.k]==null) return;
+      var v=simNum(r[im.map[m.k]]); if(v==null) return;
+      if(m.dist) v*=dm; if(m.speed) v*=sm; o[m.k]=v;
+    });
+    if(o.carry==null && o.ballSpeed==null && o.clubSpeed==null) return;
+    (by[club]=by[club]||[]).push(o); kept++;
+  });
+  if(!kept){ toast('No usable shots found — check the club names and column mapping','err'); return; }
+  var s=getSim();
+  s.sessions.push({ id:'s'+Date.now(), date:date, label:label||im.name, shots:kept, clubs:simAggregate(by) });
+  saveSim(s); _simImport=null; renderPractice(); toast(kept+' shots imported','ok');
+}
+function simDeleteSession(id){
+  showConfirm('Delete session','Remove this simulator session?','🗑️','Delete').then(function(ok){
+    if(!ok) return; var s=getSim(); s.sessions=s.sessions.filter(function(x){ return x.id!==id; }); saveSim(s); renderPractice();
+  });
+}
+var _simClub=null, _simMetric='carry';
+function simSetCompare(club,metric){ if(club) _simClub=club; if(metric) _simMetric=metric; renderPractice(); }
+function simSetSpeedUnit(u){ localStorage.setItem('gcai_sim_speed',u); renderPractice(); }
+function simCompareHtml(s){
+  var ss=s.sessions.slice().sort(function(a,b){ return String(a.date).localeCompare(String(b.date)); });
+  var clubs=CLUBS.filter(function(c){ return ss.some(function(x){ return x.clubs[c]; }); });
+  if(!clubs.length) return '';
+  if(!_simClub || clubs.indexOf(_simClub)<0) _simClub=clubs[0];
+  var m=SIM_METRICS.find(function(x){ return x.k===_simMetric; })||SIM_METRICS[0];
+  var pts=ss.map(function(x){ var c=x.clubs[_simClub]; return c&&c[m.k]!=null ? c[m.k] : null; });
+  var disp=pts.map(function(v){ return v==null?null:(m.speed&&simSpeedUnit()==='mph'?v/1.609344:v); });
+  var marks=getPractice().lessons.map(function(l){
+    var idx=ss.findIndex(function(x){ return String(x.date)>=String(l.date); }); return idx>0?idx-0.5:null;
+  }).filter(function(v){ return v!=null; });
+  var sel='<div style="display:flex;gap:8px;margin-bottom:8px"><select class="finput" style="flex:1" onchange="simSetCompare(this.value,null)">'
+    +clubs.map(function(c){ return '<option'+(c===_simClub?' selected':'')+'>'+c+'</option>'; }).join('')+'</select>'
+    +'<select class="finput" style="flex:2" onchange="simSetCompare(null,this.value)">'
+    +SIM_METRICS.map(function(x){ return '<option value="'+x.k+'"'+(x.k===m.k?' selected':'')+'>'+x.l+(simUnit(x)?' ('+simUnit(x)+')':'')+'</option>'; }).join('')+'</select></div>';
+  var chart=trendChartHtml(m.l+' · '+_simClub, disp, { dec:m.d, marks:marks, lowerBetter:!!m.lowerBetter, neutral:!!m.neutral, unit:'sessions' });
+  var have=pts.map(function(v,i){ return v==null?null:i; }).filter(function(i){ return i!=null; });
+  var table='';
+  if(have.length){
+    table='<table style="width:100%;border-collapse:collapse;font-size:.8rem;margin-top:8px"><thead><tr style="font-size:.62rem;text-transform:uppercase;color:var(--tl)"><th style="text-align:left;padding:4px">Session</th><th>Shots</th><th>'+esc(m.l)+'</th></tr></thead><tbody>'
+      +have.slice(-8).map(function(i){ var x=ss[i]; return '<tr><td style="padding:4px">'+esc(x.date)+'</td><td style="text-align:center">'+x.clubs[_simClub].n+'</td><td style="text-align:center">'+simFmt(m,pts[i])+'</td></tr>'; }).join('')+'</tbody></table>';
+    if(have.length>=2){
+      var d=pts[have[have.length-1]]-pts[have[0]];
+      var good=m.lowerBetter?d<=0:d>=0;
+      var dv=(m.speed&&simSpeedUnit()==='mph')?d/1.609344:d;
+      table+='<div style="font-size:.8rem;margin-top:6px">Change since '+esc(ss[have[0]].date)+': <b style="color:'+(m.neutral?'var(--gold)':good?'var(--gl)':'#e57373')+'">'+(dv>=0?'+':'')+dv.toFixed(m.d)+' '+simUnit(m)+'</b></div>';
+    }
+  }
+  return sel+(chart||'<div class="mu2" style="padding:6px 0">Need at least two sessions with this club to draw a trend.</div>')+table;
+}
+function simSectionHtml(){
+  var s=getSim(), h='<div class="card" style="margin-top:10px"><div class="card-title">📡 Simulator sessions</div>';
+  h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><span style="font-size:.74rem;color:var(--tl)">Speeds shown in</span><span><button class="btn btn-ghost btn-sm" style="'+(simSpeedUnit()==='mph'?'border-color:var(--gold)':'')+'" onclick="simSetSpeedUnit(\'mph\')">mph</button> <button class="btn btn-ghost btn-sm" style="'+(simSpeedUnit()==='kmh'?'border-color:var(--gold)':'')+'" onclick="simSetSpeedUnit(\'kmh\')">km/h</button></span></div>';
+  if(_simImport){
+    var im=_simImport, opt=function(sel){ return '<option value="">— not in file —</option>'+im.headers.map(function(x,i){ return '<option value="'+i+'"'+(sel===i?' selected':'')+'>'+esc(x||('column '+(i+1)))+'</option>'; }).join(''); };
+    h+='<div style="font-size:.78rem;margin-bottom:6px"><b>'+esc(im.name)+'</b> · '+im.rows.length+' rows. Check which column is which:</div>'
+      +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 8px;font-size:.74rem">'
+      +['club'].concat(SIM_METRICS.filter(function(m){ return m.k!=='carrySd'; }).map(function(m){ return m.k; })).map(function(f){
+          var lab=f==='club'?'Club':SIM_METRICS.find(function(m){ return m.k===f; }).l;
+          return '<div><label style="color:var(--tl)">'+lab+'</label><select class="finput" style="width:100%" onchange="simSetMap(\''+f+'\',this.value)">'+opt(im.map[f])+'</select></div>';
+        }).join('')+'</div>'
+      +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px"><div><label class="mu2">Distances in</label><select class="finput" style="width:100%" onchange="simSetUnit(\'dist\',this.value)"><option value="m"'+(im.units.dist==='m'?' selected':'')+'>metres</option><option value="yd"'+(im.units.dist==='yd'?' selected':'')+'>yards</option></select></div>'
+      +'<div><label class="mu2">Speeds in</label><select class="finput" style="width:100%" onchange="simSetUnit(\'speed\',this.value)"><option value="kmh"'+(im.units.speed==='kmh'?' selected':'')+'>km/h</option><option value="mph"'+(im.units.speed==='mph'?' selected':'')+'>mph</option><option value="ms"'+(im.units.speed==='ms'?' selected':'')+'>m/s</option></select></div>'
+      +'<div><label class="mu2">Session date</label><input type="date" id="simDate" class="finput" style="width:100%" value="'+_today()+'"/></div>'
+      +'<div><label class="mu2">Label</label><input type="text" id="simLabel" class="finput" style="width:100%" placeholder="e.g. Lesson 3"/></div></div>'
+      +'<div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-ghost btn-sm" style="flex:1" onclick="simCancelImport()">Cancel</button><button class="btn btn-gold btn-sm" style="flex:1" onclick="simImportConfirm()">Import</button></div>';
+  } else {
+    h+='<label class="btn btn-gold btn-sm btn-block" style="display:block;text-align:center;cursor:pointer">📂 Import session CSV<input type="file" accept=".csv,text/csv,.txt" style="display:none" onchange="simLoadFile(this.files[0]);this.value=\'\'"/></label>'
+      +'<p style="font-size:.7rem;color:var(--tl);margin:8px 0 0">Export a session report as CSV from your Foresight app, then import it here. Mishits are trimmed per club (carry more than 25% from the median) before averaging.</p>';
+  }
+  var ss=s.sessions.slice().sort(function(a,b){ return String(b.date).localeCompare(String(a.date)); });
+  if(ss.length){
+    h+='<div style="margin-top:12px">'+simCompareHtml(s)+'</div>';
+    h+='<div class="lb" style="font-size:.62rem;text-transform:uppercase;letter-spacing:.6px;color:var(--tl);margin:12px 0 4px">Sessions</div>'
+      +ss.map(function(x){ return '<div style="display:flex;justify-content:space-between;align-items:center;font-size:.8rem;padding:4px 0;border-bottom:0.5px solid rgba(255,255,255,.08)"><span>'+esc(x.date)+' · '+esc(x.label)+' <span style="color:var(--tl)">· '+x.shots+' shots · '+Object.keys(x.clubs).length+' clubs</span></span><button class="btn btn-ghost btn-sm" onclick="simDeleteSession(\''+jsStr(x.id)+'\')">✕</button></div>'; }).join('');
+  }
+  return h+'</div>';
+}
+
+function getPractice(){
+  var p=null; try{ p=JSON.parse(localStorage.getItem('gcai_practice')||'null'); }catch(e){}
+  p=p||{}; p.lessons=p.lessons||[]; p.focus=p.focus||null; return p;
+}
+function savePractice(p){ try{ localStorage.setItem('gcai_practice',JSON.stringify(p)); }catch(e){ toast('Could not save (storage full?)','err'); } }
+function currentFocus(){ var f=getPractice().focus; return (f&&f.text)?f:null; }
+function _safeUrl(u){ u=String(u||'').trim(); return /^https?:\/\//i.test(u)?u:''; }
+function _today(){ return new Date().toISOString().slice(0,10); }
+var _editLessonId=null;
+
+function saveFocus(){
+  var v=(document.getElementById('pfText')||{}).value||''; v=v.trim();
+  var p=getPractice();
+  if(!v){ p.focus=null; }
+  else if(!p.focus || p.focus.text!==v){ p.focus={ text:v, since:_today() }; }
+  savePractice(p); toast(v?'Focus saved':'Focus cleared','ok'); renderPractice(); try{ updateFocusLine(); }catch(e){}
+}
+function updateFocusLine(){
+  var el=document.getElementById('holeFocusDisplay'), f=currentFocus();
+  if(el) el.textContent=f?('🎯 '+f.text):'';
+}
+function toggleLessonForm(show){
+  var f=document.getElementById('lessonForm'); if(!f) return;
+  f.style.display=show?'block':'none';
+  if(show && !_editLessonId){
+    ['lfCoach','lfPoints','lfDrills','lfVideos','lfNotes'].forEach(function(id){ var e=document.getElementById(id); if(e) e.value=''; });
+    document.getElementById('lfDate').value=_today();
+  }
+}
+function saveLesson(){
+  var g=function(id){ return (document.getElementById(id)||{}).value||''; };
+  var lines=function(t){ return t.split(/\r?\n/).map(function(x){ return x.trim(); }).filter(Boolean); };
+  var p=getPractice(), existing=_editLessonId?p.lessons.find(function(l){ return l.id===_editLessonId; }):null;
+  var oldDone={}; if(existing) existing.drills.forEach(function(d){ oldDone[d.text]=d.done; });
+  var lesson={
+    id: existing?existing.id:('l'+Date.now()),
+    date: g('lfDate')||_today(), coach: g('lfCoach').trim(),
+    points: lines(g('lfPoints')),
+    drills: lines(g('lfDrills')).map(function(t){ var a=t.split('|'); var text=a[0].trim(); return { text:text, target:(a[1]||'').trim(), done:!!oldDone[text] }; }),
+    videos: lines(g('lfVideos')).map(function(t){ var a=t.split('|'); return a.length>1?{title:a[0].trim(),url:_safeUrl(a.slice(1).join('|'))}:{title:'',url:_safeUrl(a[0])}; }).filter(function(v){ return v.url; }),
+    notes: lines(g('lfNotes')).map(function(t){ var m=t.match(/^(\d+:\d{2}(?::\d{2})?)\s+(.*)$/); return m?{t:m[1],text:m[2]}:{t:'',text:t}; })
+  };
+  if(!lesson.points.length && !lesson.drills.length && !lesson.notes.length && !lesson.videos.length){ toast('Add at least a key point, drill, note or video','err'); return; }
+  if(existing) p.lessons[p.lessons.indexOf(existing)]=lesson; else p.lessons.push(lesson);
+  savePractice(p); _editLessonId=null; toggleLessonForm(false); renderPractice(); toast('Lesson saved','ok');
+}
+function editLesson(id){
+  var l=getPractice().lessons.find(function(x){ return x.id===id; }); if(!l) return;
+  _editLessonId=id; toggleLessonForm(true);
+  var set=function(i,v){ document.getElementById(i).value=v; };
+  set('lfDate',l.date); set('lfCoach',l.coach||'');
+  set('lfPoints',l.points.join('\n'));
+  set('lfDrills',l.drills.map(function(d){ return d.text+(d.target?' | '+d.target:''); }).join('\n'));
+  set('lfVideos',l.videos.map(function(v){ return (v.title?v.title+' | ':'')+v.url; }).join('\n'));
+  set('lfNotes',l.notes.map(function(n){ return (n.t?n.t+' ':'')+n.text; }).join('\n'));
+  document.getElementById('lessonForm').scrollIntoView({block:'start'});
+}
+function deleteLesson(id){
+  showConfirm('Delete lesson','Remove this lesson and its notes? Videos stay where they are stored.','🗑️','Delete').then(function(ok){
+    if(!ok) return; var p=getPractice(); p.lessons=p.lessons.filter(function(l){ return l.id!==id; }); savePractice(p); renderPractice();
+  });
+}
+function toggleDrill(id,i,on){
+  var p=getPractice(), l=p.lessons.find(function(x){ return x.id===id; }); if(!l||!l.drills[i]) return;
+  l.drills[i].done=!!on; savePractice(p);
+}
+function renderPractice(){
+  var el=document.getElementById('practiceBody'); if(!el) return;
+  var p=getPractice(), f=p.focus;
+  var days=f?Math.max(0,Math.round((Date.now()-new Date(f.since).getTime())/86400000)):0;
+  var h='<div class="card"><div class="card-title">🎯 Working on</div>'
+    +'<p style="font-size:.74rem;color:var(--tl);margin:0 0 8px">One thing you\u2019re focusing on right now. It shows on the hole screen, is saved with each round, and appears as a dashed line on the trends.</p>'
+    +'<div style="display:flex;gap:8px"><input class="finput" id="pfText" style="flex:1" placeholder="e.g. Keep the lower body quiet on wedge shots" value="'+esc(f?f.text:'')+'"/>'
+    +'<button class="btn btn-gold btn-sm" onclick="saveFocus()">Save</button></div>'
+    +(f?'<div style="font-size:.7rem;color:var(--tl);margin-top:6px">Since '+esc(f.since)+' · '+days+' day'+(days===1?'':'s')+'</div>':'')+'</div>';
+  h+='<button class="btn btn-gold btn-block" style="margin:10px 0" onclick="_editLessonId=null;toggleLessonForm(true)">+ New lesson</button>';
+  h+='<div class="card" id="lessonForm" style="display:none"><div class="card-title">Lesson</div>'
+    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:9px"><div class="sf"><label>Date</label><input type="date" id="lfDate"/></div><div class="sf"><label>Coach</label><input type="text" id="lfCoach" placeholder="name"/></div></div>'
+    +'<div class="sf"><label>Key points from the coach (one per line)</label><textarea id="lfPoints" rows="3" style="width:100%"></textarea></div>'
+    +'<div class="sf" style="margin-top:9px"><label>Drills (one per line; add a target after | )</label><textarea id="lfDrills" rows="3" style="width:100%" placeholder="Chip to a towel at 10 m | 8 of 15 inside 2 m"></textarea></div>'
+    +'<div class="sf" style="margin-top:9px"><label>Videos (one per line: title | link to Drive / gallery / YouTube)</label><textarea id="lfVideos" rows="2" style="width:100%" placeholder="Wedge swing, down the line | https://drive.google.com/..."></textarea></div>'
+    +'<div class="sf" style="margin-top:9px"><label>Timestamped notes (m:ss then text, one per line)</label><textarea id="lfNotes" rows="3" style="width:100%" placeholder="0:07 hands get ahead too early"></textarea></div>'
+    +'<div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-ghost btn-sm" style="flex:1" onclick="_editLessonId=null;toggleLessonForm(false)">Cancel</button><button class="btn btn-gold btn-sm" style="flex:1" onclick="saveLesson()">Save lesson</button></div></div>';
+  var ls=p.lessons.slice().sort(function(a,b){ return String(b.date).localeCompare(String(a.date)); });
+  if(!ls.length) h+='<div class="empty"><div class="ei">🎓</div>No lessons logged yet.<br/>Add the key points, drills and video links from your next lesson.</div>';
+  ls.forEach(function(l){
+    h+='<div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><div style="font-weight:700;color:var(--gold)">'+esc(l.date)+(l.coach?' · '+esc(l.coach):'')+'</div>'
+      +'<div><button class="btn btn-ghost btn-sm" onclick="editLesson(\''+jsStr(l.id)+'\')">Edit</button> <button class="btn btn-ghost btn-sm" onclick="deleteLesson(\''+jsStr(l.id)+'\')">✕</button></div></div>';
+    if(l.points.length) h+='<ul style="margin:8px 0 4px 18px;padding:0;font-size:.82rem;line-height:1.5">'+l.points.map(function(x){ return '<li>'+esc(x)+'</li>'; }).join('')+'</ul>';
+    if(l.drills.length) h+='<div class="lb" style="font-size:.62rem;text-transform:uppercase;letter-spacing:.6px;color:var(--tl);margin:8px 0 2px">Drills</div>'
+      +l.drills.map(function(d,i){ return '<label style="display:flex;gap:8px;align-items:flex-start;font-size:.82rem;margin:4px 0;cursor:pointer"><input type="checkbox" '+(d.done?'checked':'')+' onchange="toggleDrill(\''+jsStr(l.id)+'\','+i+',this.checked)" style="width:18px;height:18px;margin-top:1px"/><span>'+esc(d.text)+(d.target?' <span style="color:var(--tl)">— target: '+esc(d.target)+'</span>':'')+'</span></label>'; }).join('');
+    if(l.videos.length) h+='<div class="lb" style="font-size:.62rem;text-transform:uppercase;letter-spacing:.6px;color:var(--tl);margin:8px 0 2px">Videos</div>'
+      +l.videos.map(function(v){ return '<div style="font-size:.82rem;margin:3px 0"><a href="'+esc(v.url)+'" target="_blank" rel="noopener noreferrer" style="color:var(--gl)">▶ '+esc(v.title||v.url)+'</a></div>'; }).join('');
+    if(l.notes.length) h+='<div class="lb" style="font-size:.62rem;text-transform:uppercase;letter-spacing:.6px;color:var(--tl);margin:8px 0 2px">Notes</div>'
+      +l.notes.map(function(n){ return '<div style="font-size:.8rem;margin:2px 0">'+(n.t?'<span style="font-family:monospace;color:var(--gold);margin-right:6px">'+esc(n.t)+'</span>':'')+esc(n.text)+'</div>'; }).join('');
+    h+='</div>';
+  });
+  h+=simSectionHtml();
+  el.innerHTML=h;
+}
+
 function goTab(t) {
-  ['setup','rounds','stats','caddie'].forEach(function(x) {
+  ['setup','rounds','stats','practice','caddie'].forEach(function(x) {
     var scr = document.getElementById('screen-'+x);
     var btn = document.getElementById('tb-'+x);
     if (x === t) {
@@ -1308,6 +1630,7 @@ function goTab(t) {
     try { prefillCaddieConditions(); } catch(e) { console.error(e); }
   }
   if (t === 'stats')  { try { renderStats();  } catch(e) { console.error(e); } }
+  if (t === 'practice') { try { renderPractice(); } catch(e) { console.error(e); } }
 }
 function showHoleScreen() {
   var tb = document.getElementById('tabBar');
@@ -2032,6 +2355,7 @@ function renderHole(idx) {
   document.getElementById('hMetres').value=h.metres||'';
   document.getElementById('hHdcp').value=h.hdcp||'';
   var he=document.getElementById('hElev'); if(he) he.value=(h.elev!=null?h.elev:'');
+  try{ updateFocusLine(); }catch(e){}
   var windDisp = document.getElementById('holeWindDisplay');
   if (windDisp) windDisp.textContent = holeWindText() || '🌬️ —';
   document.getElementById('btnPrev').disabled=idx===0;
@@ -2704,6 +3028,7 @@ function finishRound() {
     playingHcp,tee:selectedTee,roundType,holes,
     windSpeed:activeWindSpeed,windDir:activeWindDir,
     savedAt:new Date().toISOString()};
+  var _fc=currentFocus(); if(_fc) round.focus=_fc.text;
   if(_roundStartMs){ round.startedAt=new Date(_roundStartMs).toISOString(); round.durationMin=Math.max(1,Math.round((Date.now()-_roundStartMs)/60000)); }
   // Playing partners — score only
   var players=roundPlayers.map(function(p){
@@ -3162,16 +3487,18 @@ function trendChartHtml(title, vals, opts) {
   var n = vals.length - 1 || 1;
   var X = function(i){ return pad + (W - 2*pad) * i / n; }, Y = function(v){ return H - pad - (H - 2*pad) * (v - lo) / (hi - lo); };
   var line = pts.map(function(p){ return X(p.i).toFixed(1)+','+Y(p.v).toFixed(1); }).join(' ');
+  var markSvg = (opts.marks||[]).map(function(m){ var x=X(m).toFixed(1); return '<line x1="'+x+'" y1="4" x2="'+x+'" y2="'+(H-4)+'" stroke="#6fd08c" stroke-width="1" stroke-dasharray="3 3"/>'; }).join('');
   var ma = pts.map(function(p, k){ var w = pts.slice(Math.max(0, k-2), k+1); return { i:p.i, v:w.reduce(function(a,q){ return a+q.v; }, 0)/w.length }; });
   var maLine = ma.map(function(p){ return X(p.i).toFixed(1)+','+Y(p.v).toFixed(1); }).join(' ');
   var last = pts[pts.length-1].v, first = pts[0].v, better = opts.lowerBetter ? last <= first : last >= first;
   var fmt = function(v){ return opts.dec != null ? v.toFixed(opts.dec) : String(Math.round(v*10)/10); };
-  return '<div class="gstat-section"><div class="gstat-sec-title">'+title+' <span style="font-size:.65rem;color:'+(better?'var(--gl)':'#e57373')+'">'+fmt(first)+' → '+fmt(last)+'</span></div>'
+  return '<div class="gstat-section"><div class="gstat-sec-title">'+title+' <span style="font-size:.65rem;color:'+(opts.neutral?'var(--gold)':better?'var(--gl)':'#e57373')+'">'+fmt(first)+' → '+fmt(last)+'</span></div>'
     + '<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;display:block">'
+    + markSvg
     + '<polyline points="'+line+'" fill="none" stroke="rgba(255,255,255,.25)" stroke-width="1.5"/>'
     + pts.map(function(p){ return '<circle cx="'+X(p.i).toFixed(1)+'" cy="'+Y(p.v).toFixed(1)+'" r="2.5" fill="#c9d8cd"/>'; }).join('')
     + '<polyline points="'+maLine+'" fill="none" stroke="#e8c872" stroke-width="2.5"/></svg>'
-    + '<div style="font-size:.62rem;color:var(--tl)">Grey = each round · gold = 3-round average · '+pts.length+' rounds</div></div>';
+    + '<div style="font-size:.62rem;color:var(--tl)">Grey = each round · gold = 3-round average'+((opts.marks||[]).length?' · dashed = lesson':'')+' · '+pts.length+' '+(opts.unit||'rounds')+'</div></div>';
 }
 function trendsHtml(all) {
   var rs = rounds.map(function(r, ri){ return { r:r, ri:ri }; }).filter(function(x){ return x.r.holes && x.r.holes.length; })
@@ -3182,14 +3509,18 @@ function trendsHtml(all) {
   var scoreD = per(function(r){ var s = r.holes.reduce(function(a,h){ return a+(h.score||0); }, 0); return (s - parOf(r)) * (18 / r.holes.length); });
   var gir = per(function(r){ var n=0; r.holes.forEach(function(h){ var np=(h.shots||[]).filter(function(s){return (s.lie||'')!=='Penalty';}); var gi=np.findIndex(function(s){return (s.lie||'')==='Green';}); if (gi!==-1 && gi<=(h.par||4)-2) n++; }); return n/r.holes.length*100; });
   var putts = per(function(r){ var p=0; r.holes.forEach(function(h){ p+=(h.shots||[]).filter(function(s){return s.club==='P'&&(s.lie||'')==='Green';}).length; }); return p/r.holes.length*18; });
+  var lessonMarks = getPractice().lessons.map(function(l){
+    var idx = rs.findIndex(function(x){ return String(x.r.date) >= String(l.date); });
+    return idx > 0 ? idx - 0.5 : null;
+  }).filter(function(m){ return m != null; });
   var sgTot = rs.map(function(x){ var m = all.filter(function(s){ return s.ri === x.ri; }); return m.length >= 8 ? sgSum(m) : null; });
   var sgCat = function(k){ return rs.map(function(x){ var m = all.filter(function(s){ return s.ri === x.ri && s.cat === k; }); return m.length >= 2 ? sgSum(m) : null; }); };
   return '<div class="gstat-section" style="grid-column:1/-1"><div class="gstat-sec-title">📈 Trends <span style="font-size:.65rem;color:var(--tl)">last '+rs.length+' rounds</span></div></div>'
-    + trendChartHtml('Score vs par (per 18)', scoreD, { lowerBetter:true, dec:1 })
-    + trendChartHtml('GIR %', gir, { dec:0 })
-    + trendChartHtml('Putts (per 18)', putts, { lowerBetter:true, dec:0 })
-    + trendChartHtml('Strokes gained (total)', sgTot, { dec:1 })
-    + ['ott','app','arg','putt'].map(function(k){ return trendChartHtml('SG '+SG_CAT_LABEL[k].toLowerCase(), sgCat(k), { dec:1 }); }).join('');
+    + trendChartHtml('Score vs par (per 18)', scoreD, { lowerBetter:true, dec:1, marks:lessonMarks })
+    + trendChartHtml('GIR %', gir, { dec:0, marks:lessonMarks })
+    + trendChartHtml('Putts (per 18)', putts, { lowerBetter:true, dec:0, marks:lessonMarks })
+    + trendChartHtml('Strokes gained (total)', sgTot, { dec:1, marks:lessonMarks })
+    + ['ott','app','arg','putt'].map(function(k){ return trendChartHtml('SG '+SG_CAT_LABEL[k].toLowerCase(), sgCat(k), { dec:1, marks:lessonMarks }); }).join('');
 }
 
 function calcStableford(round) {
