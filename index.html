@@ -4,7 +4,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
-<title>GolfCaddie AI v76</title>
+<title>GolfCaddie AI v77</title>
 
 <!-- PWA / Home Screen -->
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -1055,8 +1055,12 @@ select.finput{-webkit-appearance:none;appearance:none;background-image:url("data
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn btn-gold btn-sm" style="flex:1" onclick="backupEverything()">Back up everything</button>
         <button class="btn btn-ghost btn-sm" onclick="backupEverything(true)">Download file</button>
-        <label class="btn btn-ghost btn-sm" style="cursor:pointer">Restore<input type="file" accept=".json,application/json" style="display:none" onchange="restoreBackupFile(this.files[0]);this.value=''"/></label>
+        <label class="btn btn-ghost btn-sm" style="cursor:pointer">Restore<input type="file" accept=".json,application/json,text/plain" style="display:none" onchange="restoreBackupFile(this.files[0]);this.value=''"/></label>
       </div>
+      <details style="margin-top:8px"><summary class="mu2" style="cursor:pointer">If the file buttons don't work</summary>
+        <div style="margin-top:6px"><button class="btn btn-ghost btn-sm" onclick="copyBackupText()">Copy backup text</button></div>
+        <textarea id="restorePaste" rows="3" style="width:100%;margin-top:6px" placeholder="Paste backup text here to restore"></textarea>
+        <button class="btn btn-ghost btn-sm" style="margin-top:4px" onclick="restoreBackupFromPaste()">Restore from pasted text</button></details>
       <div id="backupStatus" class="mu2" style="margin-top:6px"></div>
       <div id="offlineStatus" class="mu2" style="margin-top:4px"></div>
     </div>
@@ -1325,23 +1329,53 @@ function markBackedUp(){
   try{ localStorage.setItem('gcai_backup_meta',JSON.stringify({ ts:Date.now(), rounds:n })); }catch(e){}
   try{ renderBackupBanner(); renderBackupStatus(); }catch(e){}
 }
+function downloadBackup(json, name, b){
+  try{
+    var blob=new Blob([json],{type:'application/json'}), url=URL.createObjectURL(blob), a=document.createElement('a');
+    a.href=url; a.download=name; a.style.display='none'; document.body.appendChild(a); a.click();
+    setTimeout(function(){ a.remove(); URL.revokeObjectURL(url); },4000);
+    markBackedUp(); toast('Backup file created ('+backupSummary(b)+'). Check your Downloads folder.','ok');
+  }catch(e){
+    toast('Could not create a file here — use "Copy backup text" in Settings instead','err');
+  }
+}
 function backupEverything(forceDownload){
+  toast('Preparing backup…','inf');
   var b=buildBackup(), json=JSON.stringify(b);
   var name='golfcaddie-backup-'+new Date().toISOString().slice(0,10)+'.json', file=null;
-  try{ file=new File([json],name,{type:'application/json'}); }catch(e){}
-  if(!forceDownload && file && navigator.canShare && navigator.canShare({files:[file]})){
-    navigator.share({files:[file],title:'GolfCaddie AI backup'}).then(function(){ markBackedUp(); toast('Backup shared','ok'); }).catch(function(){});
+  // text/plain is on every browser's share allow-list; application/json is not
+  try{ file=new File([json],name,{type:'text/plain'}); }catch(e){}
+  var canShare=!forceDownload && file && navigator.share && navigator.canShare && navigator.canShare({files:[file]});
+  if(canShare){
+    navigator.share({files:[file],title:'GolfCaddie AI backup'}).then(function(){ markBackedUp(); toast('Backup shared','ok'); })
+      .catch(function(e){
+        if(e && e.name==='AbortError'){ toast('Backup cancelled','inf'); return; }
+        downloadBackup(json,name,b);
+      });
     return;
   }
-  var a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([json],{type:'application/json'})); a.download=name;
-  document.body.appendChild(a); a.click(); a.remove();
-  markBackedUp(); toast('Backup downloaded ('+backupSummary(b)+')','ok');
+  downloadBackup(json,name,b);
+}
+function copyBackupText(){
+  var json=JSON.stringify(buildBackup());
+  var done=function(){ markBackedUp(); toast('Backup copied — paste it into a note or email to yourself','ok'); };
+  if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(json).then(done).catch(function(){ toast('Copy was blocked by the browser','err'); }); return; }
+  var ta=document.createElement('textarea'); ta.value=json; document.body.appendChild(ta); ta.select();
+  try{ document.execCommand('copy'); done(); }catch(e){ toast('Copy was blocked by the browser','err'); } ta.remove();
+}
+function restoreBackupFromPaste(){
+  var t=(document.getElementById('restorePaste')||{}).value||''; if(!t.trim()){ toast('Paste the backup text first','err'); return; }
+  restoreBackupText(t);
 }
 function restoreBackupFile(file){
   if(!file) return;
   var rd=new FileReader();
-  rd.onload=function(){
-    var b=null; try{ b=JSON.parse(rd.result); }catch(e){}
+  rd.onload=function(){ restoreBackupText(rd.result); };
+  rd.readAsText(file);
+}
+function restoreBackupText(text){
+  {
+    var b=null; try{ b=JSON.parse(text); }catch(e){}
     if(!b || b.format!=='gcai-backup' || !b.data || typeof b.data!=='object'){ toast('That is not a GolfCaddie backup file','err'); return; }
     var keys=Object.keys(b.data).filter(function(k){ return k.indexOf('gcai_')===0 && !BACKUP_SKIP[k]; });
     if(!keys.length){ toast('The backup file is empty','err'); return; }
@@ -1351,8 +1385,7 @@ function restoreBackupFile(file){
       keys.forEach(function(k){ localStorage.setItem(k,String(b.data[k])); });
       markBackedUp(); toast('Backup restored — reloading','ok'); setTimeout(function(){ location.reload(); },900);
     });
-  };
-  rd.readAsText(file);
+  }
 }
 function backupState(){
   var meta=null; try{ meta=JSON.parse(localStorage.getItem('gcai_backup_meta')||'null'); }catch(e){}
