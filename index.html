@@ -4,7 +4,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
-<title>GolfCaddie AI v69</title>
+<title>GolfCaddie AI v70</title>
 
 <!-- PWA / Home Screen -->
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -352,6 +352,7 @@ select.finput{-webkit-appearance:none;appearance:none;background-image:url("data
 .penalty-tag{font-size:.75rem;background:rgba(192,57,43,.18);color:#e74c3c;border-radius:4px;padding:2px 7px;font-weight:600}
 
 
+.pv-stage{position:relative;line-height:0}.pv-stage video{width:100%;border-radius:10px;background:#000;display:block}.pv-canvas{position:absolute;left:0;top:0;pointer-events:none;touch-action:none}
 /* v64 stats layout */
 .stats-grid{display:flex!important;flex-direction:column;gap:10px}
 .mu2{color:var(--tl);font-size:.72rem}
@@ -645,7 +646,7 @@ select.finput{-webkit-appearance:none;appearance:none;background-image:url("data
 
   <!-- ══ PRACTICE ══ -->
   <div class="screen" id="screen-practice">
-    <div class="scroll"><div id="practiceBody"></div></div>
+    <div class="scroll"><div id="practiceNav"></div><div id="practiceBody"></div><div id="practiceVideo" style="display:none"></div></div>
   </div>
 
   <!-- ══ CADDIE ══ -->
@@ -1426,7 +1427,7 @@ function simImportConfirm(){
   if(im.map.club==null){ toast('Pick the Club column','err'); return; }
   var dm = im.units.dist==='yd' ? 0.9144 : 1;
   var sm = im.units.speed==='mph' ? 1.609344 : (im.units.speed==='ms' ? 3.6 : 1);
-  var by={}, kept=0;
+  var by={}, kept=0, pts={};
   im.rows.forEach(function(r){
     var club=simNormClub(r[im.map.club]); if(!club || club==='P') return;
     var o={};
@@ -1437,10 +1438,13 @@ function simImportConfirm(){
     });
     if(o.carry==null && o.ballSpeed==null && o.clubSpeed==null) return;
     (by[club]=by[club]||[]).push(o); kept++;
+    if(o.carry!=null && o.offline!=null){ (pts[club]=pts[club]||[]).push([Math.round(o.carry*10)/10, Math.round(o.offline*10)/10]); }
   });
   if(!kept){ toast('No usable shots found — check the club names and column mapping','err'); return; }
   var s=getSim();
-  s.sessions.push({ id:'s'+Date.now(), date:date, label:label||im.name, shots:kept, clubs:simAggregate(by) });
+  var sess={ id:'s'+Date.now(), date:date, label:label||im.name, shots:kept, clubs:simAggregate(by) };
+  if(Object.keys(pts).length) sess.pts=pts;
+  s.sessions.push(sess);
   saveSim(s); _simImport=null; renderPractice(); toast(kept+' shots imported','ok');
 }
 function simDeleteSession(id){
@@ -1576,8 +1580,7 @@ function toggleDrill(id,i,on){
   var p=getPractice(), l=p.lessons.find(function(x){ return x.id===id; }); if(!l||!l.drills[i]) return;
   l.drills[i].done=!!on; savePractice(p);
 }
-function renderPractice(){
-  var el=document.getElementById('practiceBody'); if(!el) return;
+function practiceLessonsHtml(){
   var p=getPractice(), f=p.focus;
   var days=f?Math.max(0,Math.round((Date.now()-new Date(f.since).getTime())/86400000)):0;
   var h='<div class="card"><div class="card-title">🎯 Working on</div>'
@@ -1607,9 +1610,345 @@ function renderPractice(){
       +l.notes.map(function(n){ return '<div style="font-size:.8rem;margin:2px 0">'+(n.t?'<span style="font-family:monospace;color:var(--gold);margin-right:6px">'+esc(n.t)+'</span>':'')+esc(n.text)+'</div>'; }).join('');
     h+='</div>';
   });
-  h+=simSectionHtml();
-  el.innerHTML=h;
+  return h;
 }
+// ══════════════════════════════════════════════
+// PRACTICE v2 — course link, drills, dispersion, video compare
+// ══════════════════════════════════════════════
+var _pView = 'lessons';
+function setPracticeView(v){ _pView=v; renderPractice(); }
+
+// ── 1. Practice → course link ──
+var PRAC_SKILLS = {
+  arg:  { label:'Short game', sub:'shots within 45 m, off the green', cat:'sgArg', metrics:[
+    {k:'sgArg', l:'Strokes gained per 18', d:2}, {k:'scr', l:'Scrambling (saves)', d:0, u:'%'} ] },
+  putt: { label:'Putting', sub:'on the green', cat:'sgPutt', metrics:[
+    {k:'sgPutt', l:'Strokes gained per 18', d:2}, {k:'three18', l:'Three-putts per 18', d:1, lower:true}, {k:'puttsHole', l:'Putts per hole', d:2, lower:true} ] },
+  app:  { label:'Approach & wedges', sub:'shots aimed at the green', cat:'sgApp', metrics:[
+    {k:'sgApp', l:'Strokes gained per 18', d:2}, {k:'gir', l:'Greens in regulation', d:0, u:'%'}, {k:'short', l:'Approaches finishing short', d:0, u:'%', lower:true} ] },
+  ott:  { label:'Driving', sub:'tee shots on par 4s and 5s', cat:'sgOtt', metrics:[
+    {k:'sgOtt', l:'Strokes gained per 18', d:2}, {k:'fw', l:'Fairways hit', d:0, u:'%'}, {k:'miss', l:'Tagged tee shots missing left/right', d:0, u:'%', lower:true} ] }
+};
+var _pcSkill='arg', _pcRef=null, _cdClub='Approach';
+function roundPerf(r, ri, all){
+  var hs=(r.holes||[]).filter(function(h){ return h.shots && h.shots.length; }); if(!hs.length) return null;
+  var f=18/hs.length, mine=all.filter(function(x){ return x.ri===ri; }), ok=mine.length>=8;
+  var cat=function(k){ return ok ? sgSum(mine.filter(function(x){ return x.cat===k; }))*f : null; };
+  var o={ date:r.date, ri:ri, sgOtt:cat('ott'), sgApp:cat('app'), sgArg:cat('arg'), sgPutt:cat('putt') };
+  var putts=0, three=0, gir=0, fwO=0, fwH=0, scO=0, scS=0, appN=0, appShort=0, teeN=0, teeMiss=0;
+  hs.forEach(function(h){
+    var par=h.par||4, np=h.shots.filter(function(s){ return (s.lie||'')!=='Penalty'; });
+    var gi=np.findIndex(function(s){ return (s.lie||s.type||'')==='Green'; });
+    if(gi!==-1 && gi<=par-2) gir++; else { scO++; if((h.score||h.shots.length)<=par) scS++; }
+    var p=h.shots.filter(function(s){ return s.club==='P' && (s.lie||'')==='Green'; }).length; putts+=p; if(p>=3) three++;
+    if(par>=4){ fwO++; var ti=h.shots.findIndex(function(s){ return (s.lie||s.type||'')==='Tee'; });
+      if(ti!==-1){ var nx=h.shots.find(function(s,i){ return i>ti && (s.lie||'')!=='Penalty'; }); if(nx && (nx.lie||'')==='Fairway') fwH++; } }
+    h.shots.forEach(function(s){
+      if(s.approach===true && s.vDir){ appN++; if(s.vDir==='Short') appShort++; }
+      if((s.lie||'')==='Tee' && par>=4 && s.direction){ teeN++; if(s.direction!=='Center') teeMiss++; }
+    });
+  });
+  o.putts18=putts*f; o.three18=three*f; o.puttsHole=putts/hs.length; o.gir=gir/hs.length*100;
+  o.fw=fwO?fwH/fwO*100:null; o.scr=scO?scS/scO*100:null; o.short=appN>=3?appShort/appN*100:null; o.miss=teeN>=5?teeMiss/teeN*100:null;
+  return o;
+}
+function _avgOf(a,k){ var v=a.map(function(x){ return x[k]; }).filter(function(x){ return x!=null; }); return v.length?{v:v.reduce(function(s,x){return s+x;},0)/v.length,n:v.length}:null; }
+function practiceCourseHtml(){
+  var all=collectShotSG();
+  var perf=rounds.map(function(r,ri){ return roundPerf(r,ri,all); }).filter(Boolean).sort(function(a,b){ return String(a.date).localeCompare(String(b.date)); });
+  var p=getPractice();
+  var refs=p.lessons.map(function(l){ return { d:l.date, l:'Lesson on '+l.date+(l.coach?' ('+l.coach+')':'') }; });
+  if(p.focus) refs.push({ d:p.focus.since, l:'Focus started '+p.focus.since });
+  refs.sort(function(a,b){ return String(b.d).localeCompare(String(a.d)); });
+  var h='<div class="card"><div class="card-title">📈 Practice vs the course</div>'
+    +'<p style="font-size:.74rem;color:var(--tl);margin:0 0 8px">Pick a skill and a starting point to see how your rounds changed before and after. With only a few rounds this is an indication, not proof.</p>'
+    +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">'
+    +Object.keys(PRAC_SKILLS).map(function(k){ return '<button class="btn btn-ghost btn-sm" style="'+(k===_pcSkill?'border-color:var(--gold);color:var(--gold)':'')+'" onclick="_pcSkill=\''+k+'\';renderPractice()">'+PRAC_SKILLS[k].label+'</button>'; }).join('')+'</div>';
+  var sk=PRAC_SKILLS[_pcSkill];
+  h+='<div class="mu2" style="margin-bottom:8px">'+sk.label+' — '+sk.sub+'</div>';
+  if(!refs.length){ h+='<div class="mu2">Log a lesson or set a "Working on" focus first, so there is a date to compare against.</div></div>'; }
+  else {
+    if(!_pcRef || !refs.some(function(r){ return r.d===_pcRef; })) _pcRef=refs[0].d;
+    h+='<select class="finput" style="width:100%;margin-bottom:8px" onchange="_pcRef=this.value;renderPractice()">'
+      +refs.map(function(r){ return '<option value="'+esc(r.d)+'"'+(r.d===_pcRef?' selected':'')+'>Since '+esc(r.l)+'</option>'; }).join('')+'</select>';
+    var before=perf.filter(function(x){ return String(x.date)<String(_pcRef); }).slice(-8), after=perf.filter(function(x){ return String(x.date)>=String(_pcRef); });
+    h+='<table style="width:100%;border-collapse:collapse;font-size:.8rem"><thead><tr style="font-size:.62rem;text-transform:uppercase;color:var(--tl)"><th style="text-align:left;padding:4px">Measure</th><th>Before</th><th>After</th><th>Change</th></tr></thead><tbody>';
+    sk.metrics.forEach(function(m){
+      var b=_avgOf(before,m.k), a=_avgOf(after,m.k);
+      var fmt=function(x){ return x?(x.v.toFixed(m.d)+(m.u||'')+' <span style="color:var(--tl)">('+x.n+')</span>'):'—'; };
+      var ch='—', col='var(--tl)';
+      if(a&&b){ var d=a.v-b.v; ch=(d>=0?'+':'')+d.toFixed(m.d)+(m.u||''); var good=m.lower?d<=0:d>=0; col=Math.abs(d)<Math.pow(10,-m.d)/2?'var(--tl)':(good?'var(--gl)':'#e57373'); }
+      h+='<tr><td style="padding:6px 4px">'+m.l+'</td><td style="text-align:center">'+fmt(b)+'</td><td style="text-align:center">'+fmt(a)+'</td><td style="text-align:center;font-weight:600;color:'+col+'">'+ch+'</td></tr>';
+    });
+    h+='</tbody></table><div class="mu2" style="margin-top:6px">Numbers in brackets are rounds used (up to the last 8 before). '+(after.length<2?'<b>Play more rounds after this date for a fair comparison.</b>':'')+'</div>';
+    var m0=sk.metrics[0], series=perf.slice(-14).map(function(x){ return x[m0.k]; });
+    var marks=p.lessons.map(function(l){ var rs=perf.slice(-14); var i=rs.findIndex(function(x){ return String(x.date)>=String(l.date); }); return i>0?i-0.5:null; }).filter(function(x){ return x!=null; });
+    h+=(trendChartHtml(m0.l+' · '+sk.label, series, { dec:m0.d, marks:marks, lowerBetter:!!m0.lower })||'')+'</div>';
+  }
+  return h+courseDispersionHtml();
+}
+// ── 4a. On-course dispersion (left/centre/right × long/pin high/short) ──
+function courseDispersionHtml(){
+  var clubs={}, shots=[];
+  rounds.forEach(function(r){
+    var legacy=r.durationMin==null;
+    (r.holes||[]).forEach(function(h){ (h.shots||[]).forEach(function(s){
+      var lie=s.lie||s.type||''; if(!s.club||s.club==='P'||lie==='Penalty'||lie==='Recovery'||lie==='Green') return;
+      var dir=s.direction||(legacy?'Center':null);
+      shots.push({ club:s.club, dir:dir, v:s.vDir||null, appr:s.approach===true||(s.approach===undefined&&!!s.vDir), tee:lie==='Tee'&&(h.par||4)>=4 });
+      clubs[s.club]=1;
+    }); });
+  });
+  var opts=['Approach','Driver'].concat(CLUBS.filter(function(c){ return clubs[c]&&c!=='D'; }));
+  if(opts.indexOf(_cdClub)<0) _cdClub='Approach';
+  var sel=shots.filter(function(s){
+    if(_cdClub==='Approach') return s.appr;
+    if(_cdClub==='Driver') return s.club==='D'&&s.tee;
+    return s.club===_cdClub&&s.appr;
+  });
+  var h='<div class="card" style="margin-top:10px"><div class="card-title">🎯 Dispersion — from your rounds</div>'
+    +'<select class="finput" style="width:100%;margin-bottom:8px" onchange="_cdClub=this.value;renderPractice()">'+opts.map(function(o){ return '<option'+(o===_cdClub?' selected':'')+'>'+o+'</option>'; }).join('')+'</select>';
+  var dirs=['Left','Center','Right'], rowsV=['Long','PinHigh','Short'], rowL={Long:'Long',PinHigh:'Pin high',Short:'Short'};
+  var withD=sel.filter(function(s){ return s.dir; });
+  if(!withD.length){ return h+'<div class="mu2">No tagged shots for this selection yet. Tag direction (and Long / Pin high / Short on approaches) on the shot cards.</div></div>'; }
+  var cnt=function(f){ return withD.filter(f).length; };
+  if(_cdClub==='Driver'){
+    var tot=withD.length;
+    h+='<div style="display:flex;gap:8px">'+dirs.map(function(d){ var n=cnt(function(s){ return s.dir===d; }); return '<div style="flex:1;text-align:center;background:rgba(212,178,92,'+(0.1+0.5*n/tot)+');border-radius:8px;padding:12px 4px"><div style="font-size:1.4rem;font-weight:700">'+Math.round(n/tot*100)+'%</div><div class="mu2">'+d+' · '+n+'</div></div>'; }).join('')+'</div>';
+  } else {
+    var full=withD.filter(function(s){ return s.v; }), tot=full.length;
+    if(!tot){ h+='<div class="mu2">Tag Long / Pin high / Short as well as direction to fill the grid. Direction only so far: '+dirs.map(function(d){ return d+' '+cnt(function(s){ return s.dir===d; }); }).join(' · ')+'</div>'; }
+    else {
+      h+='<div style="display:grid;grid-template-columns:62px repeat(3,1fr);gap:4px;font-size:.78rem;text-align:center"><span></span>'+dirs.map(function(d){ return '<span class="mu2">'+d+'</span>'; }).join('');
+      rowsV.forEach(function(rv){
+        h+='<span class="mu2" style="text-align:right;align-self:center;padding-right:4px">'+rowL[rv]+'</span>';
+        dirs.forEach(function(d){ var n=full.filter(function(s){ return s.v===rv&&s.dir===d; }).length;
+          h+='<div style="background:rgba(212,178,92,'+(0.06+0.6*n/tot)+');border-radius:6px;padding:12px 2px"><b>'+(n?Math.round(n/tot*100)+'%':'·')+'</b><div class="mu2">'+(n||'')+'</div></div>'; });
+      });
+      h+='</div><div class="mu2" style="margin-top:6px">'+tot+' shots with both tags. Centre of the grid is the pin.</div>';
+    }
+  }
+  return h+'</div>';
+}
+
+// ── 2. Drills (indoor-friendly) ──
+var DRILL_PRESETS = [
+  { name:'Wedge ladder — carry within ±3 m of target', total:10, goal:'Pick 3 carry targets (e.g. 50/65/80 m), 10 balls' },
+  { name:'Start-line gate — offline within 5 m', total:10, goal:'Any club; ball must start and finish inside the gate' },
+  { name:'Putts from 1 m (mat)', total:20, goal:'Holed out of 20' },
+  { name:'Putts from 2 m (mat)', total:20, goal:'Holed out of 20' },
+  { name:'Chips to a towel at 10 m (net / mat)', total:15, goal:'Landing on the towel' },
+  { name:'Tempo — smash factor within 0.03 of your best', total:10, goal:'Same club, 10 swings' }
+];
+function getDrills(){ var d=null; try{ d=JSON.parse(localStorage.getItem('gcai_drills')||'null'); }catch(e){} d=d||{}; d.drills=d.drills||[]; d.logs=d.logs||[]; return d; }
+function saveDrills(d){ try{ localStorage.setItem('gcai_drills',JSON.stringify(d)); }catch(e){ toast('Could not save','err'); } }
+function addDrill(name,total,goal){
+  name=String(name||'').trim(); if(!name){ toast('Give the drill a name','err'); return; }
+  var d=getDrills(); d.drills.push({ id:'d'+Date.now()+Math.floor(Math.random()*99), name:name, total:parseInt(total)||10, goal:goal||'' });
+  saveDrills(d); renderPractice();
+}
+function addDrillFromForm(){ var g=function(i){ return (document.getElementById(i)||{}).value; }; addDrill(g('dfName'),g('dfTotal'),g('dfGoal')); }
+function logDrill(id){
+  var m=parseInt((document.getElementById('dm_'+id)||{}).value), t=parseInt((document.getElementById('dt_'+id)||{}).value);
+  if(isNaN(m)||isNaN(t)||t<=0||m<0||m>t){ toast('Enter successes and attempts (successes cannot exceed attempts)','err'); return; }
+  var d=getDrills(); d.logs.push({ id:'g'+Date.now(), drillId:id, date:_today(), made:m, total:t }); saveDrills(d); renderPractice(); toast('Logged '+m+' / '+t,'ok');
+}
+function deleteDrill(id){
+  showConfirm('Delete drill','Remove this drill and all its logged scores?','🗑️','Delete').then(function(ok){
+    if(!ok) return; var d=getDrills(); d.drills=d.drills.filter(function(x){ return x.id!==id; }); d.logs=d.logs.filter(function(x){ return x.drillId!==id; }); saveDrills(d); renderPractice();
+  });
+}
+function deleteDrillLog(id){ var d=getDrills(); d.logs=d.logs.filter(function(x){ return x.id!==id; }); saveDrills(d); renderPractice(); }
+function practiceDrillsHtml(){
+  var d=getDrills(), h='<div class="card"><div class="card-title">🎯 Drills</div>'
+    +'<p style="font-size:.74rem;color:var(--tl);margin:0 0 8px">Score a drill as successes out of attempts and watch the percentage over time. These presets work on a mat or simulator; none need a bunker or a course.</p>'
+    +'<div style="display:flex;gap:6px;flex-wrap:wrap">'+DRILL_PRESETS.filter(function(p){ return !d.drills.some(function(x){ return x.name===p.name; }); }).map(function(p,i){ return '<button class="btn btn-ghost btn-sm" onclick="addDrill(DRILL_PRESETS['+DRILL_PRESETS.indexOf(p)+'].name,DRILL_PRESETS['+DRILL_PRESETS.indexOf(p)+'].total,DRILL_PRESETS['+DRILL_PRESETS.indexOf(p)+'].goal)">+ '+esc(p.name.split(' — ')[0])+'</button>'; }).join('')+'</div>'
+    +'<div style="display:grid;grid-template-columns:2fr 1fr;gap:6px;margin-top:10px"><input class="finput" id="dfName" placeholder="Custom drill name"/><input class="finput" id="dfTotal" type="number" placeholder="Attempts" value="10"/></div>'
+    +'<input class="finput" id="dfGoal" style="width:100%;margin-top:6px" placeholder="What counts as a success (optional)"/>'
+    +'<button class="btn btn-gold btn-sm btn-block" style="margin-top:8px" onclick="addDrillFromForm()">Add custom drill</button></div>';
+  if(!d.drills.length) h+='<div class="empty"><div class="ei">🎯</div>Add a drill above, then log each practice set.</div>';
+  var lessons=getPractice().lessons;
+  d.drills.forEach(function(dr){
+    var logs=d.logs.filter(function(x){ return x.drillId===dr.id; }).sort(function(a,b){ return String(a.date).localeCompare(String(b.date))||a.id.localeCompare(b.id); });
+    var pct=logs.map(function(x){ return x.made/x.total*100; });
+    var last=logs[logs.length-1], best=logs.length?Math.max.apply(null,pct):null;
+    var marks=lessons.map(function(l){ var i=logs.findIndex(function(x){ return String(x.date)>=String(l.date); }); return i>0?i-0.5:null; }).filter(function(x){ return x!=null; });
+    h+='<div class="card"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px"><div><div style="font-weight:700;color:var(--gold);font-size:.9rem">'+esc(dr.name)+'</div>'+(dr.goal?'<div class="mu2">'+esc(dr.goal)+'</div>':'')+'</div><button class="btn btn-ghost btn-sm" onclick="deleteDrill(\''+jsStr(dr.id)+'\')">✕</button></div>'
+      +(logs.length?'<div style="font-size:.8rem;margin:6px 0">Last: <b>'+last.made+' / '+last.total+'</b> ('+Math.round(last.made/last.total*100)+'%) on '+esc(last.date)+' · best '+Math.round(best)+'% · '+logs.length+' sets</div>':'<div class="mu2" style="margin:6px 0">No sets logged yet.</div>')
+      +(trendChartHtml('Success rate', pct, { dec:0, marks:marks, unit:'sets' })||'')
+      +'<div style="display:flex;gap:6px;align-items:center;margin-top:8px"><input class="finput" id="dm_'+esc(dr.id)+'" type="number" placeholder="made" style="width:30%"/><span>/</span><input class="finput" id="dt_'+esc(dr.id)+'" type="number" value="'+dr.total+'" style="width:30%"/><button class="btn btn-gold btn-sm" style="flex:1" onclick="logDrill(\''+jsStr(dr.id)+'\')">Log set</button></div>'
+      +(logs.length?'<details style="margin-top:6px"><summary class="mu2" style="cursor:pointer">History</summary>'+logs.slice().reverse().slice(0,15).map(function(x){ return '<div style="display:flex;justify-content:space-between;font-size:.78rem;padding:2px 0"><span>'+esc(x.date)+' · '+x.made+' / '+x.total+'</span><button class="btn btn-ghost btn-sm" onclick="deleteDrillLog(\''+jsStr(x.id)+'\')">✕</button></div>'; }).join('')+'</details>':'')
+      +'</div>';
+  });
+  return h;
+}
+
+// ── 4b. Simulator dispersion (carry vs offline) ──
+var _sdClub=null, _sdA=null, _sdB='';
+function simFlip(){ return localStorage.getItem('gcai_sim_flip')==='1'; }
+function simSetFlip(on){ localStorage.setItem('gcai_sim_flip',on?'1':'0'); renderPractice(); }
+function simDispersionHtml(){
+  var s=getSim(), ss=s.sessions.filter(function(x){ return x.pts; }).sort(function(a,b){ return String(a.date).localeCompare(String(b.date)); });
+  var h='<div class="card" style="margin-top:10px"><div class="card-title">🎯 Dispersion — from the simulator</div>';
+  if(!ss.length) return h+'<div class="mu2">Import a session CSV (this version onwards) to see where each shot landed. Sessions imported earlier only have averages — re-import them to enable this.</div></div>';
+  var clubs=CLUBS.filter(function(c){ return ss.some(function(x){ return x.pts[c] && x.pts[c].length; }); });
+  if(!_sdClub||clubs.indexOf(_sdClub)<0) _sdClub=clubs[0];
+  var withClub=ss.filter(function(x){ return x.pts[_sdClub]&&x.pts[_sdClub].length; });
+  if(!_sdA||!withClub.some(function(x){ return x.id===_sdA; })) _sdA=withClub[withClub.length-1].id;
+  if(_sdB && !withClub.some(function(x){ return x.id===_sdB; })) _sdB='';
+  var opt=function(sel,none){ return (none?'<option value="">— none —</option>':'')+withClub.map(function(x){ return '<option value="'+x.id+'"'+(x.id===sel?' selected':'')+'>'+esc(x.date)+' · '+esc(x.label)+'</option>'; }).join(''); };
+  h+='<div style="display:flex;gap:6px;margin-bottom:6px"><select class="finput" style="width:30%" onchange="_sdClub=this.value;renderPractice()">'+clubs.map(function(c){ return '<option'+(c===_sdClub?' selected':'')+'>'+c+'</option>'; }).join('')+'</select>'
+    +'<select class="finput" style="flex:1" onchange="_sdA=this.value;renderPractice()">'+opt(_sdA,false)+'</select></div>'
+    +'<div style="display:flex;gap:6px;align-items:center;margin-bottom:8px"><span class="mu2">Compare with</span><select class="finput" style="flex:1" onchange="_sdB=this.value;renderPractice()">'+opt(_sdB,true)+'</select></div>';
+  var A=ss.find(function(x){ return x.id===_sdA; }), B=_sdB?ss.find(function(x){ return x.id===_sdB; }):null;
+  var flip=simFlip(), sgn=flip?-1:1;
+  var pa=(A.pts[_sdClub]||[]).map(function(p){ return [p[1]*sgn,p[0]]; }), pb=B?(B.pts[_sdClub]||[]).map(function(p){ return [p[1]*sgn,p[0]]; }):[];
+  var allp=pa.concat(pb); if(!allp.length) return h+'</div>';
+  var maxOff=Math.max(10,Math.max.apply(null,allp.map(function(p){ return Math.abs(p[0]); })))*1.15;
+  var cmin=Math.min.apply(null,allp.map(function(p){ return p[1]; })), cmax=Math.max.apply(null,allp.map(function(p){ return p[1]; }));
+  var pad=Math.max(5,(cmax-cmin)*0.15); cmin-=pad; cmax+=pad;
+  var W=300,H=260,X=function(o){ return W/2+o/maxOff*(W/2-10); }, Y=function(c){ return H-14-(c-cmin)/(cmax-cmin)*(H-28); };
+  function stats(p){ var n=p.length, mo=p.reduce(function(a,x){return a+x[0];},0)/n, mc=p.reduce(function(a,x){return a+x[1];},0)/n;
+    var so=n>1?Math.sqrt(p.reduce(function(a,x){return a+(x[0]-mo)*(x[0]-mo);},0)/(n-1)):0, sc=n>1?Math.sqrt(p.reduce(function(a,x){return a+(x[1]-mc)*(x[1]-mc);},0)/(n-1)):0; return {n:n,mo:mo,mc:mc,so:so,sc:sc}; }
+  function layer(p,col){ if(!p.length) return ''; var st=stats(p);
+    return '<ellipse cx="'+X(st.mo).toFixed(1)+'" cy="'+Y(st.mc).toFixed(1)+'" rx="'+Math.max(3,Math.abs(X(st.mo+2*st.so)-X(st.mo))).toFixed(1)+'" ry="'+Math.max(3,Math.abs(Y(st.mc-2*st.sc)-Y(st.mc))).toFixed(1)+'" fill="'+col+'" fill-opacity=".12" stroke="'+col+'" stroke-width="1.5" stroke-dasharray="4 3"/>'
+      +p.map(function(q){ return '<circle cx="'+X(q[0]).toFixed(1)+'" cy="'+Y(q[1]).toFixed(1)+'" r="3" fill="'+col+'" fill-opacity=".8"/>'; }).join('')
+      +'<path d="M'+(X(st.mo)-6).toFixed(1)+' '+Y(st.mc).toFixed(1)+'h12M'+X(st.mo).toFixed(1)+' '+(Y(st.mc)-6).toFixed(1)+'v12" stroke="'+col+'" stroke-width="2.5"/>'; }
+  var svg='<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;display:block;background:rgba(0,0,0,.15);border-radius:10px">'
+    +'<line x1="'+W/2+'" y1="6" x2="'+W/2+'" y2="'+(H-6)+'" stroke="rgba(255,255,255,.35)" stroke-dasharray="4 4"/>'
+    +'<text x="8" y="16" fill="#9bb3a2" font-size="11">Left</text><text x="'+(W-34)+'" y="16" fill="#9bb3a2" font-size="11">Right</text>'
+    +'<text x="8" y="'+(H-4)+'" fill="#9bb3a2" font-size="11">'+Math.round(cmin)+' m</text><text x="8" y="30" fill="#9bb3a2" font-size="11">'+Math.round(cmax)+' m</text>'
+    +layer(pa,'#d4b25c')+layer(pb,'#6fd08c')+'</svg>';
+  h+=svg;
+  var line=function(label,p,col){ if(!p.length) return ''; var st=stats(p); return '<div style="font-size:.78rem;margin-top:4px"><span style="color:'+col+'">●</span> '+esc(label)+' — '+st.n+' shots · carry '+st.mc.toFixed(0)+' m ±'+st.sc.toFixed(1)+' · offline bias '+(st.mo>=0?'right ':'left ')+Math.abs(st.mo).toFixed(1)+' m · width (±2 SD) '+(4*st.so).toFixed(0)+' m</div>'; };
+  h+=line(A.date+' '+A.label,pa,'#d4b25c')+(B?line(B.date+' '+B.label,pb,'#6fd08c'):'');
+  h+='<label style="display:flex;gap:8px;align-items:center;font-size:.74rem;color:var(--tl);margin-top:8px"><input type="checkbox" '+(flip?'checked':'')+' onchange="simSetFlip(this.checked)" style="width:18px;height:18px"/>Flip left / right (if your monitor reports offline the other way round)</label>';
+  return h+'</div>';
+}
+
+// ── 7. Video compare with frame step and drawing ──
+var _pv={ slots:{ a:{}, b:{} }, layout:'side', speed:1 };
+function pvSlot(k){ return document.getElementById('pv_'+k); }
+function pvEmbedUrl(u){
+  u=String(u||'').trim(); if(!/^https:\/\//i.test(u)) return null;
+  var m;
+  if((m=u.match(/drive\.google\.com\/file\/d\/([^\/?#]+)/))) return { type:'iframe', src:'https://drive.google.com/file/d/'+m[1]+'/preview' };
+  if((m=u.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|shorts\/|embed\/))([\w-]{6,})/))) return { type:'iframe', src:'https://www.youtube.com/embed/'+m[1] };
+  if(/\.(mp4|webm|mov|m4v)(\?|#|$)/i.test(u)) return { type:'video', src:u };
+  return { type:'link', src:u };
+}
+function pvSetSource(k, kind, src){
+  var s=_pv.slots[k]; if(s.objUrl){ try{ URL.revokeObjectURL(s.objUrl); }catch(e){} s.objUrl=null; }
+  s.strokes=[]; s.kind=kind;
+  var box=document.getElementById('pvbox_'+k); if(!box) return;
+  if(kind==='video'){
+    box.innerHTML='<div class="pv-stage"><video id="pv_'+k+'" playsinline muted preload="metadata" src="'+esc(src)+'"></video><canvas id="pvc_'+k+'" class="pv-canvas"></canvas></div>';
+    var v=pvSlot(k); v.addEventListener('loadedmetadata',function(){ pvSizeCanvas(k); pvUpdateScrub(); });
+    v.addEventListener('timeupdate',pvUpdateScrub); v.addEventListener('ended',function(){ pvSetPlayIcon(false); });
+    pvBindDraw(k);
+  } else if(kind==='iframe'){
+    box.innerHTML='<iframe src="'+esc(src)+'" allow="autoplay; fullscreen" allowfullscreen style="width:100%;aspect-ratio:9/16;border:0;border-radius:10px;background:#000"></iframe><div class="mu2">Linked video: play it here, but frame-step, sync and drawing need a video file from your phone.</div>';
+  } else { box.innerHTML='<a href="'+esc(src)+'" target="_blank" rel="noopener noreferrer" style="color:var(--gl)">Open this link in a new tab</a><div class="mu2">This link type can’t be shown inside the app.</div>'; }
+}
+function pvLoadFile(k, file){
+  if(!file) return;
+  var url=URL.createObjectURL(file); pvSetSource(k,'video',url); _pv.slots[k].objUrl=url; _pv.slots[k].name=file.name;
+}
+function pvLoadLink(k){
+  var inp=document.getElementById('pvl_'+k), e=pvEmbedUrl(inp&&inp.value);
+  if(!e){ toast('Paste an https link (Google Drive, YouTube or a direct video file)','err'); return; }
+  pvSetSource(k,e.type,e.src);
+}
+function pvSizeCanvas(k){
+  var v=pvSlot(k), c=document.getElementById('pvc_'+k); if(!v||!c) return;
+  var r=v.getBoundingClientRect(); if(!r.width) return;
+  c.width=Math.round(r.width); c.height=Math.round(r.height); c.style.width=r.width+'px'; c.style.height=r.height+'px';
+  pvRedraw(k);
+}
+function pvRedraw(k){
+  var c=document.getElementById('pvc_'+k); if(!c) return; var g=c.getContext('2d'), s=_pv.slots[k];
+  g.clearRect(0,0,c.width,c.height); g.lineWidth=3; g.lineCap='round';
+  (s.strokes||[]).concat(s.cur?[s.cur]:[]).forEach(function(st){
+    g.strokeStyle=st.col; g.beginPath();
+    if(st.kind==='line'){ g.moveTo(st.pts[0][0]*c.width,st.pts[0][1]*c.height); var e=st.pts[st.pts.length-1]; g.lineTo(e[0]*c.width,e[1]*c.height); }
+    else st.pts.forEach(function(p,i){ if(i) g.lineTo(p[0]*c.width,p[1]*c.height); else g.moveTo(p[0]*c.width,p[1]*c.height); });
+    g.stroke();
+  });
+}
+function pvBindDraw(k){
+  var c=document.getElementById('pvc_'+k); if(!c) return;
+  var pos=function(ev){ var r=c.getBoundingClientRect(); return [(ev.clientX-r.left)/r.width,(ev.clientY-r.top)/r.height]; };
+  c.addEventListener('pointerdown',function(ev){ var s=_pv.slots[k]; if(!s.draw) return; c.setPointerCapture(ev.pointerId); s.cur={ kind:s.tool||'free', col:s.col||'#ff3b3b', pts:[pos(ev)] }; ev.preventDefault(); });
+  c.addEventListener('pointermove',function(ev){ var s=_pv.slots[k]; if(!s.cur) return; s.cur.pts.push(pos(ev)); pvRedraw(k); });
+  var end=function(){ var s=_pv.slots[k]; if(!s.cur) return; (s.strokes=s.strokes||[]).push(s.cur); s.cur=null; pvRedraw(k); };
+  c.addEventListener('pointerup',end); c.addEventListener('pointercancel',end);
+}
+function pvToggleDraw(k){ var s=_pv.slots[k], c=document.getElementById('pvc_'+k); s.draw=!s.draw; if(c) c.style.pointerEvents=s.draw?'auto':'none'; var b=document.getElementById('pvdraw_'+k); if(b) b.style.borderColor=s.draw?'var(--gold)':''; }
+function pvSetTool(k,t){ _pv.slots[k].tool=t; }
+function pvSetCol(k,c){ _pv.slots[k].col=c; }
+function pvUndo(k){ var s=_pv.slots[k]; if(s.strokes&&s.strokes.length){ s.strokes.pop(); pvRedraw(k); } }
+function pvClear(k){ _pv.slots[k].strokes=[]; pvRedraw(k); }
+function pvVideos(){ return ['a','b'].map(pvSlot).filter(function(v){ return v && v.tagName==='VIDEO'; }); }
+function pvSetPlayIcon(on){ var b=document.getElementById('pvPlay'); if(b) b.textContent=on?'⏸ Pause':'▶ Play'; }
+function pvPlayPause(){
+  var vs=pvVideos(); if(!vs.length){ toast('Load a video file first','err'); return; }
+  var playing=vs.some(function(v){ return !v.paused; });
+  vs.forEach(function(v){ if(playing) v.pause(); else { v.playbackRate=_pv.speed; v.play().catch(function(){}); } }); pvSetPlayIcon(!playing);
+}
+function pvSetSpeed(x){ _pv.speed=parseFloat(x)||1; pvVideos().forEach(function(v){ v.playbackRate=_pv.speed; }); }
+function pvStep(dir){ pvVideos().forEach(function(v){ v.pause(); v.currentTime=Math.max(0,Math.min(v.duration||0,v.currentTime+dir/30)); }); pvSetPlayIcon(false); }
+function pvSeek(frac){ pvVideos().forEach(function(v){ if(v.duration) v.currentTime=frac*v.duration; }); }
+function pvUpdateScrub(){ var vs=pvVideos(), sc=document.getElementById('pvScrub'); if(!vs.length||!sc) return; var v=vs[0]; if(v.duration) sc.value=Math.round(v.currentTime/v.duration*1000); var t=document.getElementById('pvTime'); if(t) t.textContent=v.currentTime.toFixed(2)+' s'; }
+function pvLayout(l){ _pv.layout=l; var g=document.getElementById('pvGrid'); if(g) g.style.gridTemplateColumns=l==='side'?'1fr 1fr':'1fr'; setTimeout(function(){ pvSizeCanvas('a'); pvSizeCanvas('b'); },50); }
+function pvSnapshot(k){
+  var v=pvSlot(k), c=document.getElementById('pvc_'+k); if(!v||v.tagName!=='VIDEO'||!v.videoWidth){ toast('Load a video file first','err'); return; }
+  var cv=document.createElement('canvas'); cv.width=v.videoWidth; cv.height=v.videoHeight; var g=cv.getContext('2d');
+  g.drawImage(v,0,0,cv.width,cv.height); if(c&&c.width) g.drawImage(c,0,0,cv.width,cv.height);
+  cv.toBlob(function(blob){
+    if(!blob){ toast('Could not save the frame','err'); return; }
+    var file=null; try{ file=new File([blob],'swing-frame.png',{type:'image/png'}); }catch(e){}
+    if(file && navigator.canShare && navigator.canShare({files:[file]})) navigator.share({files:[file],title:'Swing frame'}).catch(function(){});
+    else { var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='swing-frame-'+_today()+'.png'; document.body.appendChild(a); a.click(); a.remove(); toast('Frame saved to your downloads','ok'); }
+  },'image/png');
+}
+function pvSlotHtml(k, title){
+  var cols=['#ff3b3b','#ffd60a','#34c759','#ffffff'];
+  return '<div><div style="font-weight:600;font-size:.8rem;color:var(--gold);margin-bottom:4px">'+title+'</div>'
+    +'<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:4px">'
+    +'<label class="btn btn-ghost btn-sm" style="cursor:pointer">🎥 Record<input type="file" accept="video/*" capture="environment" style="display:none" onchange="pvLoadFile(\''+k+'\',this.files[0]);this.value=\'\'"/></label>'
+    +'<label class="btn btn-ghost btn-sm" style="cursor:pointer">📁 Choose<input type="file" accept="video/*" style="display:none" onchange="pvLoadFile(\''+k+'\',this.files[0]);this.value=\'\'"/></label></div>'
+    +'<div style="display:flex;gap:4px;margin-bottom:4px"><input id="pvl_'+k+'" class="finput" style="flex:1;min-width:0" placeholder="or paste a link"/><button class="btn btn-ghost btn-sm" onclick="pvLoadLink(\''+k+'\')">Go</button></div>'
+    +'<div id="pvbox_'+k+'"><div class="mu2" style="padding:24px 4px;text-align:center;border:1px dashed rgba(255,255,255,.2);border-radius:10px">No video loaded</div></div>'
+    +'<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px;align-items:center"><button class="btn btn-ghost btn-sm" id="pvdraw_'+k+'" onclick="pvToggleDraw(\''+k+'\')">✏️ Draw</button>'
+    +'<select class="finput" style="width:64px" onchange="pvSetTool(\''+k+'\',this.value)"><option value="free">Free</option><option value="line">Line</option></select>'
+    +cols.map(function(c){ return '<button onclick="pvSetCol(\''+k+'\',\''+c+'\')" aria-label="colour" style="width:22px;height:22px;border-radius:50%;border:1px solid rgba(255,255,255,.5);background:'+c+'"></button>'; }).join('')
+    +'<button class="btn btn-ghost btn-sm" onclick="pvUndo(\''+k+'\')">↩</button><button class="btn btn-ghost btn-sm" onclick="pvClear(\''+k+'\')">🗑</button><button class="btn btn-ghost btn-sm" onclick="pvSnapshot(\''+k+'\')">📸</button></div></div>';
+}
+function practiceVideoInit(){
+  var el=document.getElementById('practiceVideo'); if(!el || el.getAttribute('data-init')) return; el.setAttribute('data-init','1'); window.addEventListener('resize',function(){ pvSizeCanvas('a'); pvSizeCanvas('b'); });
+  el.innerHTML='<div class="card"><div class="card-title">🎥 Video compare</div>'
+    +'<p style="font-size:.74rem;color:var(--tl);margin:0 0 8px">Record or choose swing videos from your phone (nothing is uploaded or stored), play two side by side, step frame by frame and draw on them to show your coach. Linked Google Drive or YouTube videos play but can’t be stepped or drawn on.</p>'
+    +'<div id="pvGrid" style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+pvSlotHtml('a','Video A')+pvSlotHtml('b','Video B')+'</div>'
+    +'<div style="display:flex;gap:6px;margin-top:10px;align-items:center"><button class="btn btn-gold btn-sm" id="pvPlay" onclick="pvPlayPause()">▶ Play</button><button class="btn btn-ghost btn-sm" onclick="pvStep(-1)">◀ frame</button><button class="btn btn-ghost btn-sm" onclick="pvStep(1)">frame ▶</button>'
+    +'<select class="finput" style="width:74px" onchange="pvSetSpeed(this.value)"><option value="1">1×</option><option value="0.5">0.5×</option><option value="0.25">0.25×</option></select><span id="pvTime" class="mu2" style="margin-left:auto"></span></div>'
+    +'<input type="range" id="pvScrub" min="0" max="1000" value="0" style="width:100%;margin-top:8px" oninput="pvSeek(this.value/1000)"/>'
+    +'<div style="display:flex;gap:6px;margin-top:4px"><button class="btn btn-ghost btn-sm" onclick="pvLayout(\'side\')">Side by side</button><button class="btn btn-ghost btn-sm" onclick="pvLayout(\'stack\')">Stacked</button></div></div>';
+}
+
+function renderPractice(){
+  var nav=document.getElementById('practiceNav'), body=document.getElementById('practiceBody'), vid=document.getElementById('practiceVideo'); if(!nav||!body) return;
+  var tabs=[['lessons','📝 Lessons'],['drills','🎯 Drills'],['sim','📡 Simulator'],['course','📈 Course link'],['video','🎥 Video']];
+  nav.innerHTML='<div class="tabs2" style="display:flex;gap:6px;overflow-x:auto;padding:2px 0 10px">'+tabs.map(function(t){ return '<button class="btn btn-ghost btn-sm" style="white-space:nowrap;'+(t[0]===_pView?'border-color:var(--gold);color:var(--gold)':'')+'" onclick="setPracticeView(\''+t[0]+'\')">'+t[1]+'</button>'; }).join('')+'</div>';
+  practiceVideoInit();
+  if(vid) vid.style.display=_pView==='video'?'block':'none';
+  body.style.display=_pView==='video'?'none':'block';
+  if(_pView==='video'){ body.innerHTML=''; setTimeout(function(){ pvSizeCanvas('a'); pvSizeCanvas('b'); },50); return; }
+  if(_pView==='drills') body.innerHTML=practiceDrillsHtml();
+  else if(_pView==='sim') body.innerHTML=simSectionHtml()+simDispersionHtml();
+  else if(_pView==='course') body.innerHTML=practiceCourseHtml();
+  else body.innerHTML=practiceLessonsHtml();
+}
+
 
 function goTab(t) {
   ['setup','rounds','stats','practice','caddie'].forEach(function(x) {
