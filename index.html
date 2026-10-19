@@ -4,7 +4,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
-<title>GolfCaddie AI v75</title>
+<title>GolfCaddie AI v76</title>
 
 <!-- PWA / Home Screen -->
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -459,6 +459,7 @@ select.finput{-webkit-appearance:none;appearance:none;background-image:url("data
   <!-- ══ SETUP ══ -->
   <div class="screen active" id="screen-setup">
     <div class="scroll">
+      <div id="backupBanner"></div>
 
       <div class="card">
         <div class="card-title">🏌️ Round Details</div>
@@ -1048,6 +1049,17 @@ select.finput{-webkit-appearance:none;appearance:none;background-image:url("data
       </div>
     </div>
 
+    <div class="card" style="margin-top:14px">
+      <h3 style="margin:0 0 6px">💾 Backup &amp; restore</h3>
+      <p style="font-size:.74rem;color:var(--tl);margin:0 0 8px">Saves everything in one file: rounds, courses, green positions, club distances, lessons, drills and simulator sessions. API keys are left out. On a phone, the share sheet lets you send it straight to Google Drive.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-gold btn-sm" style="flex:1" onclick="backupEverything()">Back up everything</button>
+        <button class="btn btn-ghost btn-sm" onclick="backupEverything(true)">Download file</button>
+        <label class="btn btn-ghost btn-sm" style="cursor:pointer">Restore<input type="file" accept=".json,application/json" style="display:none" onchange="restoreBackupFile(this.files[0]);this.value=''"/></label>
+      </div>
+      <div id="backupStatus" class="mu2" style="margin-top:6px"></div>
+      <div id="offlineStatus" class="mu2" style="margin-top:4px"></div>
+    </div>
     <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn btn-gold btn-sm" style="flex:1" onclick="closeSettings();openCourseManager()">⛳ Saved Courses</button>
       <button class="btn btn-gold btn-sm" style="flex:1" onclick="closeSettings();openClubPanel()">🏌️ Club Distances</button>
@@ -1289,6 +1301,92 @@ function loadDraft(){
   }catch(e){clearDraft();}
 }
 
+// ══════════════════════════════════════════════
+// BACKUP & RESTORE (everything) + offline mode
+// ══════════════════════════════════════════════
+var BACKUP_SKIP = { gcai_anthropic_key:1, gcai_notion:1, gcai_rapidkey:1, gcai_draft:1, gcai_backup_meta:1, gcai_backup_snooze:1 };
+function buildBackup(){
+  var data={};
+  for(var i=0;i<localStorage.length;i++){ var k=localStorage.key(i); if(k.indexOf('gcai_')===0 && !BACKUP_SKIP[k]) data[k]=localStorage.getItem(k); }
+  return { format:'gcai-backup', version:1, app:'GolfCaddie AI', exportedAt:new Date().toISOString(), data:data };
+}
+function _jsonLen(v,key){ try{ var x=JSON.parse(v); return key?Object.keys(x[key]||x).length:(Array.isArray(x)?x.length:Object.keys(x).length); }catch(e){ return 0; } }
+function backupSummary(b){
+  var d=b.data||{}, parts=[];
+  var rr=_jsonLen(d.gcai_rounds||'[]'); parts.push(rr+' round'+(rr===1?'':'s'));
+  var cc=Object.keys((function(){ try{ return JSON.parse(d.gcai_courses||'{}'); }catch(e){ return {}; } })()).length; parts.push(cc+' course'+(cc===1?'':'s'));
+  var pr=(function(){ try{ return JSON.parse(d.gcai_practice||'{}'); }catch(e){ return {}; } })(); parts.push(((pr.lessons||[]).length)+' lesson'+(((pr.lessons||[]).length)===1?'':'s'));
+  var dr=(function(){ try{ return JSON.parse(d.gcai_drills||'{}'); }catch(e){ return {}; } })(); parts.push(((dr.logs||[]).length)+' drill sets');
+  var sm=(function(){ try{ return JSON.parse(d.gcai_sim||'{}'); }catch(e){ return {}; } })(); parts.push(((sm.sessions||[]).length)+' simulator sessions');
+  return parts.join(' · ');
+}
+function markBackedUp(){
+  var n=0; try{ n=JSON.parse(localStorage.getItem('gcai_rounds')||'[]').length; }catch(e){}
+  try{ localStorage.setItem('gcai_backup_meta',JSON.stringify({ ts:Date.now(), rounds:n })); }catch(e){}
+  try{ renderBackupBanner(); renderBackupStatus(); }catch(e){}
+}
+function backupEverything(forceDownload){
+  var b=buildBackup(), json=JSON.stringify(b);
+  var name='golfcaddie-backup-'+new Date().toISOString().slice(0,10)+'.json', file=null;
+  try{ file=new File([json],name,{type:'application/json'}); }catch(e){}
+  if(!forceDownload && file && navigator.canShare && navigator.canShare({files:[file]})){
+    navigator.share({files:[file],title:'GolfCaddie AI backup'}).then(function(){ markBackedUp(); toast('Backup shared','ok'); }).catch(function(){});
+    return;
+  }
+  var a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([json],{type:'application/json'})); a.download=name;
+  document.body.appendChild(a); a.click(); a.remove();
+  markBackedUp(); toast('Backup downloaded ('+backupSummary(b)+')','ok');
+}
+function restoreBackupFile(file){
+  if(!file) return;
+  var rd=new FileReader();
+  rd.onload=function(){
+    var b=null; try{ b=JSON.parse(rd.result); }catch(e){}
+    if(!b || b.format!=='gcai-backup' || !b.data || typeof b.data!=='object'){ toast('That is not a GolfCaddie backup file','err'); return; }
+    var keys=Object.keys(b.data).filter(function(k){ return k.indexOf('gcai_')===0 && !BACKUP_SKIP[k]; });
+    if(!keys.length){ toast('The backup file is empty','err'); return; }
+    showConfirm('Restore backup','This replaces everything currently in the app with the backup from '+String(b.exportedAt||'').slice(0,10)+': '+backupSummary(b)+'. API keys are not part of a backup and stay as they are. Back up first if you want to keep the current data.','♻️','Restore').then(function(ok){
+      if(!ok) return;
+      Object.keys(localStorage).filter(function(k){ return k.indexOf('gcai_')===0 && !BACKUP_SKIP[k]; }).forEach(function(k){ localStorage.removeItem(k); });
+      keys.forEach(function(k){ localStorage.setItem(k,String(b.data[k])); });
+      markBackedUp(); toast('Backup restored — reloading','ok'); setTimeout(function(){ location.reload(); },900);
+    });
+  };
+  rd.readAsText(file);
+}
+function backupState(){
+  var meta=null; try{ meta=JSON.parse(localStorage.getItem('gcai_backup_meta')||'null'); }catch(e){}
+  var n=0; try{ n=JSON.parse(localStorage.getItem('gcai_rounds')||'[]').length; }catch(e){}
+  var days=meta?Math.floor((Date.now()-meta.ts)/86400000):null, since=meta?Math.max(0,n-meta.rounds):n;
+  var snooze=parseInt(localStorage.getItem('gcai_backup_snooze')||'0')||0;
+  var due = n>0 && (!meta || since>=3 || days>=30);
+  return { meta:meta, rounds:n, days:days, since:since, due:due && Date.now()>snooze };
+}
+function snoozeBackup(){ localStorage.setItem('gcai_backup_snooze',String(Date.now()+3*86400000)); renderBackupBanner(); }
+function renderBackupBanner(){
+  var el=document.getElementById('backupBanner'); if(!el) return;
+  var s=backupState();
+  if(!s.due){ el.innerHTML=''; return; }
+  var why=!s.meta?'You have not backed up yet':(s.since>=3?(s.since+' new rounds since your last backup'):('Last backup '+s.days+' days ago'));
+  el.innerHTML='<div class="card" style="border-color:var(--gold);margin-bottom:10px"><div style="font-weight:600;margin-bottom:4px">💾 Back up your data</div>'
+    +'<div class="mu2" style="margin-bottom:8px">'+why+'. Your rounds, courses, green positions and practice live only in this browser.</div>'
+    +'<div style="display:flex;gap:8px"><button class="btn btn-gold btn-sm" style="flex:1" onclick="backupEverything()">Back up now</button><button class="btn btn-ghost btn-sm" onclick="snoozeBackup()">Later</button></div></div>';
+}
+function renderBackupStatus(){
+  var el=document.getElementById('backupStatus'); if(!el) return;
+  var s=backupState();
+  el.textContent=s.meta?('Last backup: '+new Date(s.meta.ts).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})+' · '+s.since+' round'+(s.since===1?'':'s')+' since'):'No backup yet.';
+}
+function setOfflineStatus(t,ok){ var el=document.getElementById('offlineStatus'); if(el){ el.textContent=t; el.style.color=ok?'var(--gl)':'var(--tl)'; } }
+function registerOffline(){
+  if(!('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)){ setOfflineStatus('Offline mode needs the app opened from its web address.'); return; }
+  navigator.serviceWorker.register('sw.js').then(function(){ return navigator.serviceWorker.ready; }).then(function(){
+    setOfflineStatus('✓ Ready to open without signal (maps, weather and elevation still need signal)',true);
+    try{ if(!localStorage.getItem('gcai_offline_told')){ localStorage.setItem('gcai_offline_told','1'); toast('App ready to work offline','ok'); } }catch(e){}
+  }).catch(function(){ setOfflineStatus('Offline mode is not active: upload sw.js next to index.html on GitHub.'); });
+}
+
+
 window.onload = function() {
   try {
     var d = document.getElementById('roundDate');
@@ -1303,6 +1401,8 @@ window.onload = function() {
   try { loadDraft(); } catch(e) {}
   // renderStats() called only when stats tab opened
   try { updateNotionPill(); } catch(e) {}
+  try { renderBackupBanner(); renderBackupStatus(); } catch(e) {}
+  try { registerOffline(); } catch(e) {}
 };
 
 // ══════════════════════════════════════════════
@@ -3506,6 +3606,7 @@ function finishRound() {
   if(activeConditions.tempC!=null||activeConditions.altM!=null||activeConditions.pressureHpa!=null) round.conditions={tempC:activeConditions.tempC,pressureHpa:activeConditions.pressureHpa,altM:activeConditions.altM,windFromDeg:activeConditions.windFromDeg};
   rounds.unshift(round);
   localStorage.setItem('gcai_rounds',JSON.stringify(rounds));
+  try{ renderBackupBanner(); }catch(e){}
   clearDraft();
   saveCourseTemplate(course, activeHoles, selectedTee, null);
   const diff=totalScore-par;
