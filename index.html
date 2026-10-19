@@ -4,7 +4,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
-<title>GolfCaddie AI v72</title>
+<title>GolfCaddie AI v75</title>
 
 <!-- PWA / Home Screen -->
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -355,6 +355,16 @@ select.finput{-webkit-appearance:none;appearance:none;background-image:url("data
 
 
 .pv-wrap{text-align:center}.pv-stage{position:relative;line-height:0;display:inline-block;max-width:100%}.pv-stage video{width:auto;max-width:100%;max-height:58vh;border-radius:10px;background:#000;display:block}.pv-canvas{position:absolute;left:0;top:0;pointer-events:none;touch-action:none}
+.scrow{display:grid;grid-template-columns:42px 34px 46px 40px 40px 40px 1fr;align-items:center;text-align:center;padding:7px 0;border-bottom:1px solid rgba(255,255,255,.07);font-size:.82rem;cursor:pointer}
+.scrow .scc-hole{text-align:left;padding-left:6px;border-right:1px solid rgba(255,255,255,.22);margin-right:6px}
+.schd{font-size:.6rem;text-transform:uppercase;letter-spacing:.5px;color:var(--tl);cursor:default;border-bottom:1px solid rgba(255,255,255,.2)}
+.scsum{font-weight:700;background:rgba(255,255,255,.04);cursor:default}
+.sc{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;font-weight:600;font-size:.8rem}
+.sc.bi{border-radius:50%;border:1.5px solid #e57373;color:#f09595}
+.sc.ea{border-radius:50%;border:1.5px solid var(--gold);box-shadow:0 0 0 2px #14301f,0 0 0 3.5px var(--gold);color:var(--gold)}
+.sc.bo{border:1.5px solid var(--gold);color:var(--gold);border-radius:3px}
+.sc.db{border:1.5px solid #e67e22;color:#e67e22;border-radius:3px;box-shadow:0 0 0 2px #14301f,0 0 0 3.5px #e67e22}
+.chip2{display:inline-block;background:rgba(0,0,0,.2);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:4px 9px;font-size:.74rem;margin:2px 4px 2px 0}
 /* v64 stats layout */
 .stats-grid{display:flex!important;flex-direction:column;gap:10px}
 .mu2{color:var(--tl);font-size:.72rem}
@@ -612,10 +622,9 @@ select.finput{-webkit-appearance:none;appearance:none;background-image:url("data
     </div>
     <div id="partnerScores" style="display:none;padding:7px 12px;background:rgba(201,168,76,.08);flex-shrink:0"></div>
     <div class="shots-area" id="shotsScroll"><div id="holeHistory"></div><div id="shotsArea"></div></div>
-    <div class="hole-actions" style="grid-template-columns:1fr 1fr">
+    <div class="hole-actions" style="grid-template-columns:1fr 1fr 1.3fr">
       <button class="btn btn-ghost" onclick="addShot()">+ Shot</button>
       <button class="btn btn-ghost" onclick="addShot(true)" style="border-color:rgba(192,57,43,.5);color:#e74c3c">⚠️ Penalty</button>
-      <button class="btn btn-ghost" id="btnHoled" onclick="toggleHoled()" style="border-color:rgba(90,171,114,.5);color:var(--gl)">🏁 Holed</button>
       <button class="btn btn-gold" id="btnFinish" onclick="saveAndNext()">Next →</button>
     </div>
     <div style="padding:10px 13px 10px;flex-shrink:0">
@@ -2779,7 +2788,7 @@ function saveAndNext(){
   saveDraft();
   saveCurrentMeta();
   var idx=currentHole;
-  try{ var _ls=(shotData[idx]||[]).slice(-1)[0]; if(_ls && ((_ls.club==='P' && _ls.lie==='Green') || _ls.holed)) autoCapturePoint('green', idx); }catch(e){}
+  try{ var _np=(shotData[idx]||[]).filter(function(x){ return (x.lie||'')!=='Penalty'; }), _ls=_np[_np.length-1]; if(_ls){ _ls.holed=true; autoCapturePoint('green', idx); } }catch(e){}
   renderHole(idx+1);
 }
 
@@ -2832,8 +2841,11 @@ function defaultsForShot(idx, shotIndex) {
 
 // Default for "aimed at the green": from the 1st shot on a par 3, 2nd on a par 4, 3rd on a par 5 onwards
 // (putts / shots from the green never count)
-function approachDefault(idx, si) {
+function approachDefault(idx, si, lie) {
   var h = activeHoles[idx], shots = shotData[idx], real = 0;
+  lie = lie || ((shots[si] && shots[si].lie) || '');
+  if (lie === 'Green' || lie === 'Recovery' || lie === 'Penalty') return false;
+  if (lie === 'Tee' && h && (h.par || 4) >= 4) return false;      // a tee shot (incl. a re-tee after OB) is not an approach
   for (var i = 0; i < si; i++) if (shots[i] && (shots[i].lie || '') !== 'Penalty') real++;
   return !!h && real >= (h.par || 4) - 3;
 }
@@ -2851,7 +2863,7 @@ function addShot(isPenalty=false) {
       result: 'OK', note: '',
       _auto: si===0 && h.metres ? true : false
     };
-    shot.approach = defs.lie !== 'Green' && defs.club !== 'P' && approachDefault(idx, si);
+    shot.approach = approachDefault(idx, si, defs.lie);
     shot._lieAuto = true; shot._clubAuto = true;
   }
   shotData[idx].forEach(function(x){ if(x.holed) x.holed=false; });
@@ -2942,31 +2954,16 @@ function renderHoleHistory(idx){
   }
   el.innerHTML=html;
 }
-function updateHoledButton(){
-  var b=document.getElementById('btnHoled'); if(!b) return;
-  var np=(shotData[currentHole]||[]).filter(function(s){ return (s.lie||'')!=='Penalty'; }), last=np[np.length-1];
-  var on=!!(last&&last.holed);
-  b.textContent=on?'🏁 Holed ✓':'🏁 Holed';
-  b.style.background=on?'rgba(90,171,114,.28)':'';
-}
-function toggleHoled(){
-  var idx=currentHole, np=(shotData[idx]||[]).filter(function(s){ return (s.lie||'')!=='Penalty'; }), last=np[np.length-1];
-  if(!last){ toast('Log a shot first','err'); return; }
-  last.holed=!last.holed; try{ saveDraft(); }catch(e){}
-  updateHoledButton(); refreshSGChips(idx);
-  if(last.holed) toast('Last shot marked as holed','ok');
-}
-
 function renderShots(idx) {
   const area=document.getElementById('shotsArea');
   if(!shotData[idx]||!shotData[idx].length){
     area.innerHTML=`<div class="empty"><div class="ei">🏌️</div>Tap "+ Shot" to log your first shot</div>`;
-    try{ renderHoleHistory(idx); updateHoledButton(); }catch(e){ console.error('history',e); }
+    try{ renderHoleHistory(idx); }catch(e){ console.error('history',e); }
     return;
   }
   area.innerHTML='';
   shotData[idx].forEach((shot,si)=>area.appendChild(buildShotCard(idx,si,shot)));
-  try{ renderHoleHistory(idx); updateHoledButton(); }catch(e){ console.error('history',e); }
+  try{ renderHoleHistory(idx); }catch(e){ console.error('history',e); }
 }
 
 function buildShotCard(idx, si, shot) {
@@ -2997,6 +2994,24 @@ function buildShotCard(idx, si, shot) {
     ? '<div id="sg-' + idx + '-' + si + '" class="shot-sg ' + (sg >= 0 ? 'sg-pos' : 'sg-neg') + '">' + (sg >= 0 ? '+' : '') + (sg!=null&&!isNaN(sg)?sg.toFixed(2):'0.00') + ' SG</div>'
     : '<div id="sg-' + idx + '-' + si + '" class="shot-sg" style="opacity:.45" title="Strokes gained appears once this shot has a distance and the next shot (or a holed putt) is logged">SG \u2014</div>';
 
+  if ((shot.lie || '') === 'Green' && !shot._full) {
+    const pr = ['Good','OK','Poor'].map(function(r) {
+      return '<button class="rbtn' + (shot.result === r ? ' active-' + r : '') + '" onclick="setResult(' + idx + ',' + si + ',\'' + r + '\',this)">' + r + '</button>';
+    }).join('');
+    card.innerHTML =
+      '<div class="shot-hdr"><div class="shot-badge">' + (si + 1) + '</div>' +
+        '<div class="shot-lbl">Shot ' + (si + 1) + ' <span class="mu2" style="font-weight:400">\u00b7 Putt</span></div>' + sgHtml + '</div>' +
+      '<button class="rm-shot" onclick="removeShot(' + idx + ',' + si + ')">&#x2715;</button>' +
+      '<div style="display:grid;grid-template-columns:1fr 1.5fr;gap:9px;align-items:end">' +
+        '<div class="sf"><label>Distance (m)</label><input type="number" id="dist-' + idx + '-' + si + '" value="' + (shot.distance || '') + '" placeholder="\u2014" min="0" max="60" step="0.1"' +
+          ' oninput="updShot(' + idx + ',' + si + ',\'distance\',this.value?parseFloat(this.value):null);updShot(' + idx + ',' + si + ',\'_auto\',false);updShot(' + idx + ',' + si + ',\'_gps\',false);refreshSGChips(' + idx + ')"/></div>' +
+        '<div class="sf"><label>Result</label><div class="result-row" style="grid-template-columns:repeat(3,1fr)">' + pr + '</div></div></div>' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px">' +
+        '<a href="#" onclick="showFullCard(' + idx + ',' + si + ');return false" class="mu2" style="color:var(--gl)">Edit club, lie or note</a>' +
+        '<span class="mu2">' + escAttr(shot.note || '') + '</span></div>';
+    return card;
+  }
+
   const co = CLUBS.map(function(c) {
     return '<option' + (c === shot.club ? ' selected' : '') + '>' + c + '</option>';
   }).join('');
@@ -3011,9 +3026,11 @@ function buildShotCard(idx, si, shot) {
   // or later once you've walked up and can see where it finished). Skipped for
   // putts, and "vs target" is skipped for a tee shot on a par 4/5 (no pin to aim at).
   const h = activeHoles[idx];
-  const showDirVert = shot.club && shot.club !== 'P';
   const onGreen = (shot.lie||'') === 'Green';
-  const isApproach = !onGreen && shot.club !== 'P' && !!shot.approach;
+  const teeLong = (shot.lie||'') === 'Tee' && h && (h.par||4) >= 4;
+  const showDirVert = !!shot.club && !onGreen;
+  const isApproach = !onGreen && !teeLong && !!shot.approach;
+  const typeTag = onGreen ? 'Putt' : isRecovery ? 'Recovery' : teeLong ? 'Tee shot' : isApproach ? 'Approach' : 'Other shot';
   const dirRow = showDirVert
     ? '<div class="sf"><label>Direction</label><div class="result-row" style="grid-template-columns:repeat(3,1fr)">'
       + ['Left','Center','Right'].map(function(d){
@@ -3032,7 +3049,7 @@ function buildShotCard(idx, si, shot) {
   card.innerHTML =
     '<div class="shot-hdr">' +
       '<div class="shot-badge">' + (si + 1) + '</div>' +
-      '<div class="shot-lbl">Shot ' + (si + 1) + (isRecovery ? ' <span class="recovery-tag">Recovery</span>' : '') + '</div>' +
+      '<div class="shot-lbl">Shot ' + (si + 1) + ' <span class="mu2" style="font-weight:400">\u00b7 ' + typeTag + '</span></div>' +
       sgHtml +
     '</div>' +
     '<button class="rm-shot" onclick="removeShot(' + idx + ',' + si + ')">&#x2715;</button>' +
@@ -3054,9 +3071,9 @@ function buildShotCard(idx, si, shot) {
       '<div class="sf"><label>Result</label><div class="result-row">' + rb + '</div></div>' +
       dirRow + vertRow +
     '</div>' +
-    ((showDirVert && !onGreen) || (shot.club && shot.club !== 'P')
+    ((!onGreen && !teeLong) || (shot.club && shot.club !== 'P')
       ? '<div style="display:flex;justify-content:space-between;align-items:center;gap:24px;margin:6px 0 10px">' +
-          ((showDirVert && !onGreen)
+          ((!onGreen && !teeLong)
             ? '<label title="Approach: enables Long / Pin High / Short" style="display:flex;align-items:center;gap:7px;font-size:.9rem;color:var(--cream);cursor:pointer">' +
                 '<input type="checkbox" ' + (shot.approach ? 'checked' : '') +
                 ' onchange="setApproach(' + idx + ',' + si + ',this.checked)" style="width:28px;height:28px"/>\ud83c\udfaf Aimed at green</label>'
@@ -3075,12 +3092,14 @@ function buildShotCard(idx, si, shot) {
   return card;
 }
 
+function showFullCard(idx, si){ var s=shotData[idx][si]; if(s){ s._full=true; renderShots(idx); } }
+
 // When lie changes — re-render only if switching to/from Penalty (card structure changes)
 function onLieChange(idx, si, val) {
   updShot(idx, si, 'lie', val);
   updShot(idx, si, '_lieAuto', false);
   if (val === 'Green') { updShot(idx, si, 'approach', false); updShot(idx, si, 'vDir', null); }
-  else if (shotData[idx][si] && shotData[idx][si].club !== 'P') updShot(idx, si, 'approach', approachDefault(idx, si));
+  else if (shotData[idx][si]) updShot(idx, si, 'approach', approachDefault(idx, si, val));
   renderShots(idx);   // direction / vs-target rows depend on lie and club
 }
 function setApproach(idx, si, on) {
@@ -3091,8 +3110,8 @@ function setApproach(idx, si, on) {
 function onClubChange(idx, si, val) {
   updShot(idx, si, 'club', val);
   updShot(idx, si, '_clubAuto', false);
-  if (val === 'P') { updShot(idx, si, 'approach', false); updShot(idx, si, 'vDir', null); }
-  else if (shotData[idx][si] && shotData[idx][si].lie !== 'Green') updShot(idx, si, 'approach', approachDefault(idx, si));
+  if (val === 'P' && (shotData[idx][si]||{}).lie === 'Green') { updShot(idx, si, 'approach', false); updShot(idx, si, 'vDir', null); }
+  else if (shotData[idx][si] && shotData[idx][si].lie !== 'Green') updShot(idx, si, 'approach', approachDefault(idx, si, shotData[idx][si].lie));
   renderShots(idx);
 }
 
@@ -3328,7 +3347,7 @@ function applyMissToNextShot(idx, si) {
   var defs = defaultsForShot(idx, ni);
   nx.lie = defs.lie;
   if (nx._clubAuto) nx.club = defs.club;
-  nx.approach = nx.lie !== 'Green' && nx.club !== 'P' && approachDefault(idx, ni);
+  nx.approach = approachDefault(idx, ni, nx.lie);
   if (nx.lie === 'Green' || nx.club === 'P') nx.vDir = null;
   saveDraft();
   renderShots(idx);
@@ -3450,7 +3469,7 @@ function discardRound() {
 
 function finishRound() {
   saveCurrentMeta();
-  try{ var _lh=currentHole, _ls=(shotData[_lh]||[]).slice(-1)[0]; if(_ls && ((_ls.club==='P' && _ls.lie==='Green') || _ls.holed)) autoCapturePoint('green', _lh); }catch(e){}
+  try{ var _lh=currentHole, _np=(shotData[_lh]||[]).filter(function(x){ return (x.lie||'')!=='Penalty'; }), _ls=_np[_np.length-1]; if(_ls){ _ls.holed=true; autoCapturePoint('green', _lh); } }catch(e){}
   const course=document.getElementById('courseInput').value.trim();
   const date=document.getElementById('roundDate').value;
   const par=parseInt(document.getElementById('coursePar').value);
@@ -3701,7 +3720,7 @@ function openDetail(ref) {
     ${r.holes.map((h,hi)=>{
       const hd=h.score-h.par;
       const [cls]=hd<=-2?['eagle']:hd===-1?['birdie']:hd===0?['par-s']:hd===1?['bogey']:hd===2?['dbl']:['tpl'];
-      return `<div class="rd-hole">
+      return `<div class="rd-hole" id="rdh-${hi}">
         <div class="rd-hole-hdr">
           <div class="rd-hole-num">Hole ${h.hole}${h.name?' — '+esc(h.name):''} · Par ${h.par}${h.metres?' · '+h.metres+'m':''}${h.hdcp?' · Hdcp '+h.hdcp:''}</div>
           <div class="rd-hole-score ${cls}">${h.score}</div>
@@ -3732,6 +3751,7 @@ function openDetail(ref) {
       </div>`;
     }).join('')}`;
   try { if (s.firstElementChild) s.firstElementChild.insertAdjacentHTML('afterend', roundExtrasHtml(ri)); } catch(e){ console.error('coach',e); }
+  try { if (s.firstElementChild) s.firstElementChild.insertAdjacentHTML('afterend', roundScorecardHtml(ri)); } catch(e){ console.error('scorecard',e); }
   try { if (r.players && r.players.length) s.insertAdjacentHTML('beforeend', renderLeaderboard(r)); } catch(e){ console.error('leaderboard',e); }
   try { if (_compareMode) s.insertAdjacentHTML('afterbegin', renderRoundCompare(ri)); } catch(e){ console.error('compare',e); }
   var cb=document.getElementById('rdCompareBtn'); if(cb) cb.style.color=_compareMode?'var(--gl)':'';
@@ -3750,7 +3770,7 @@ var SG_CAT_TIP = {
   putt:'Do lag-putting drills from 8–12 m and a make-rate drill from 1–2 m.'
 };
 function sgCategory(lie, par, dist, shot) {
-  if (lie === 'Green' || (lie === 'Fringe' && shot && shot.club === 'P')) return 'putt';
+  if (lie === 'Green') return 'putt';
   if (lie === 'Tee' && (par || 4) >= 4) return 'ott';
   if (dist <= 45) return 'arg';
   return 'app';
@@ -3793,6 +3813,32 @@ function collectShotSG() {
 function sgSum(list) { return list.reduce(function(a, x) { return a + x.sg; }, 0); }
 
 // Putting by distance: make rate and SG per putt
+// Lag putting: how close does the first putt leave it? A leave over 1 m counts as a poor lag.
+function lagPuttingHtml(){
+  var bands=[[0,3,'Under 3 m'],[3,6,'3–6 m'],[6,10,'6–10 m'],[10,999,'10 m +']], data=bands.map(function(){ return []; }), all=[];
+  rounds.forEach(function(r){ (r.holes||[]).forEach(function(h){
+    var pt=(h.shots||[]).filter(function(s){ return s.club==='P' && (s.lie||'')==='Green'; });
+    if(!pt.length || pt[0].distance==null) return;
+    var d1=parseFloat(pt[0].distance); if(isNaN(d1)||d1<=0) return;
+    var leave;
+    if(pt.length===1) leave=0; else { if(pt[1].distance==null) return; leave=parseFloat(pt[1].distance); if(isNaN(leave)) return; }
+    var b=bands.findIndex(function(x){ return d1>=x[0]&&d1<x[1]; }); if(b<0) return;
+    data[b].push(leave); all.push({d:d1,leave:leave});
+  }); });
+  if(all.length<5) return '';
+  var rows=bands.map(function(b,i){
+    var l=data[i]; if(!l.length) return '';
+    var avg=l.reduce(function(a,x){return a+x;},0)/l.length, within=l.filter(function(x){ return x<=1; }).length;
+    return '<tr><td style="padding:6px 8px;font-weight:600;color:var(--gold)">'+b[2]+'</td><td style="text-align:center">'+l.length+'</td><td style="text-align:center">'+avg.toFixed(1)+' m</td>'
+      +'<td style="text-align:center">'+Math.round(within/l.length*100)+'%</td><td style="text-align:center;color:'+(within/l.length>=0.75?'var(--gl)':'#e57373')+'">'+Math.round((1-within/l.length)*100)+'%</td></tr>';
+  }).join('');
+  var inLong=all.filter(function(x){ return x.d>=3; });
+  var poor=inLong.length?Math.round(inLong.filter(function(x){ return x.leave>1; }).length/inLong.length*100):null;
+  return '<div class="gstat-section"><div class="gstat-sec-title">🎯 Lag putting <span style="font-size:.65rem;color:var(--tl);text-transform:none;letter-spacing:0">first putt leave</span></div>'
+    +'<table style="width:100%;border-collapse:collapse;font-size:.8rem"><thead><tr style="font-size:.6rem;text-transform:uppercase;letter-spacing:.5px;color:var(--tl);border-bottom:1px solid rgba(255,255,255,.1)"><th style="text-align:left;padding:5px 8px">First putt</th><th>Putts</th><th>Avg leave</th><th>Inside 1 m</th><th>Poor (>1 m)</th></tr></thead><tbody>'+rows+'</tbody></table>'
+    +'<div class="mu2" style="margin-top:6px">'+(poor!=null?'From 3 m and further, <b>'+poor+'%</b> of first putts leave more than 1 m. ':'')+'A holed first putt counts as 0 m. Needs the putt distance on both putts.</div></div>';
+}
+
 function puttingByDistanceHtml(all) {
   var bands = [[0,1,'< 1 m'],[1,2,'1–2 m'],[2,4,'2–4 m'],[4,7,'4–7 m'],[7,12,'7–12 m'],[12,999,'12 m +']];
   var putts = all.filter(function(x){ return x.cat === 'putt'; });
@@ -3964,6 +4010,57 @@ function trendsHtml(all) {
     + trendChartHtml('Putts (per 18)', putts, { lowerBetter:true, dec:0, marks:lessonMarks })
     + trendChartHtml('Strokes gained (total)', sgTot, { dec:1, marks:lessonMarks })
     + ['ott','app','arg','putt'].map(function(k){ return trendChartHtml('SG '+SG_CAT_LABEL[k].toLowerCase(), sgCat(k), { dec:1, marks:lessonMarks }); }).join('');
+}
+
+// ── Round scorecard (one row per hole) ──
+function scoreMarkHtml(score, par){
+  var d=score-par, cls='pa';
+  if(d<=-2) cls='ea'; else if(d===-1) cls='bi'; else if(d===1) cls='bo'; else if(d>=2) cls='db';
+  return '<span class="sc '+cls+'">'+score+'</span>';
+}
+function holeStatsOf(h){
+  var shots=h.shots||[], par=h.par||4, np=shots.filter(function(s){ return (s.lie||'')!=='Penalty'; });
+  var gi=np.findIndex(function(s){ return (s.lie||s.type||'')==='Green'; });
+  var gir=gi!==-1 && gi<=par-2;
+  var putts=shots.filter(function(s){ return s.club==='P' && (s.lie||'')==='Green'; }).length;
+  var fw=null;
+  if(par>=4){ var ti=shots.findIndex(function(s){ return (s.lie||s.type||'')==='Tee'; });
+    if(ti!==-1){ var nx=shots.find(function(s,i){ return i>ti && (s.lie||'')!=='Penalty'; }); fw=!!(nx && (nx.lie||'')==='Fairway'); } }
+  var pens=shots.filter(function(s){ return (s.lie||'')==='Penalty'; }).length;
+  var score=h.score||shots.length;
+  var saved=null; if(!gir){ saved = score<=par; }
+  return { par:par, score:score, gir:gir, putts:putts, fw:fw, pens:pens, saved:saved };
+}
+function roundScorecardHtml(ri, sgAll){
+  var r=rounds[ri]; if(!r||!r.holes||!r.holes.length) return '';
+  var mine=(sgAll||collectShotSG()).filter(function(x){ return x.ri===ri; });
+  var rows=r.holes.map(function(h,hi){ var st=holeStatsOf(h); var sg=mine.filter(function(x){ return x.hi===hi; }); st.sg=sg.length?sgSum(sg):null; st.hole=h.hole; st.hi=hi; return st; });
+  var sgv=function(v){ return v==null?'<span class="mu2">—</span>':'<span class="'+(v>=0?'sg-pos':'sg-neg')+'">'+(v>=0?'+':'−')+Math.abs(v).toFixed(1)+'</span>'; };
+  var rowHtml=function(st){
+    return '<div class="scrow" onclick="var e=document.getElementById(\'rdh-'+st.hi+'\');if(e)e.scrollIntoView({behavior:\'smooth\',block:\'start\'})">'
+      +'<b class="scc scc-hole">'+st.hole+'</b><span class="scc">'+st.par+'</span><span class="scc">'+scoreMarkHtml(st.score,st.par)+'</span><span class="scc">'+st.putts+'</span>'
+      +'<span class="scc">'+(st.fw===null?'<span class="mu2">–</span>':(st.fw?'<span class="sg-pos">✓</span>':'<span class="sg-neg">✗</span>'))+'</span>'
+      +'<span class="scc">'+(st.gir?'<span class="sg-pos">●</span>':'<span class="sg-neg">○</span>')+'</span><span class="scc">'+sgv(st.sg)+'</span></div>';
+  };
+  var sumRow=function(label, list){
+    var sc=list.reduce(function(a,x){return a+x.score;},0), pr=list.reduce(function(a,x){return a+x.par;},0), pu=list.reduce(function(a,x){return a+x.putts;},0);
+    var fwO=list.filter(function(x){ return x.fw!==null; }), fwH=fwO.filter(function(x){ return x.fw; }).length, g=list.filter(function(x){ return x.gir; }).length;
+    var sgl=list.filter(function(x){ return x.sg!=null; }), sg=sgl.length?sgl.reduce(function(a,x){return a+x.sg;},0):null;
+    return '<div class="scrow scsum"><b class="scc scc-hole">'+label+'</b><span class="scc">'+pr+'</span><span class="scc">'+sc+'</span><span class="scc">'+pu+'</span><span class="scc">'+(fwO.length?fwH+'/'+fwO.length:'–')+'</span><span class="scc">'+g+'/'+list.length+'</span><span class="scc">'+sgv(sg)+'</span></div>';
+  };
+  var html='<div class="card" style="margin-bottom:12px"><div class="scrow schd"><span class="scc scc-hole">Hole</span><span class="scc">Par</span><span class="scc">Score</span><span class="scc">Putts</span><span class="scc">Fwy</span><span class="scc">GIR</span><span class="scc">SG</span></div>';
+  if(rows.length>9){
+    html+=rows.slice(0,9).map(rowHtml).join('')+sumRow('Out',rows.slice(0,9))+rows.slice(9).map(rowHtml).join('')+sumRow('In',rows.slice(9))+sumRow('Total',rows);
+  } else html+=rows.map(rowHtml).join('')+sumRow('Total',rows);
+  var fwAll=rows.filter(function(x){ return x.fw!==null; }), ud=rows.filter(function(x){ return x.saved!==null; });
+  html+='<div style="margin-top:10px">'
+    +'<span class="chip2">GIR <b>'+rows.filter(function(x){return x.gir;}).length+'/'+rows.length+'</b></span>'
+    +(fwAll.length?'<span class="chip2">Fairways <b>'+fwAll.filter(function(x){return x.fw;}).length+'/'+fwAll.length+'</b></span>':'')
+    +'<span class="chip2">Putts <b>'+rows.reduce(function(a,x){return a+x.putts;},0)+'</b></span>'
+    +(ud.length?'<span class="chip2">Up and down <b>'+ud.filter(function(x){return x.saved;}).length+'/'+ud.length+'</b></span>':'')
+    +'<span class="chip2">Penalties <b>'+rows.reduce(function(a,x){return a+x.pens;},0)+'</b></span></div>'
+    +'<div class="mu2" style="margin-top:6px">Tap a hole to jump to its shots. Circle = birdie, square = bogey, double border = eagle or double bogey.</div></div>';
+  return html;
 }
 
 function calcStableford(round) {
@@ -4291,7 +4388,7 @@ function _renderStatsInner() {
   }
 
   var _allSG = collectShotSG();
-  var sgClubHtml = sgByClubHtml(_allSG), puttDistHtml = puttingByDistanceHtml(_allSG), trendHtmlAll = trendsHtml(_allSG);
+  var sgClubHtml = sgByClubHtml(_allSG), puttDistHtml = puttingByDistanceHtml(_allSG), lagHtml = lagPuttingHtml(), trendHtmlAll = trendsHtml(_allSG);
   const fmtDiff=d=>d===0?'E':(d>0?'+':'')+d.toFixed(1);
   const fmtDiffInt=d=>d===0?'E':(d>0?'+':'')+Math.round(d);
   var _sgS = calcSG(false), _sgH = calcSG(true);
@@ -4421,7 +4518,7 @@ function _renderStatsInner() {
       </div>
     </div>
 
-    ${puttDistHtml}`)}
+    ${lagHtml}${puttDistHtml}`)}
     ${fold('📐 Strokes gained by club', `${sgClubHtml}`)}
     ${fold('📈 Trends', `${trendHtmlAll}`)}
     ${fold('⏱ Pace &amp; activity', `${paceHtml}<!-- Rounds played -->
@@ -6716,7 +6813,7 @@ function autoFillShot(idx, si){
     if(d!=null && s2._clubAuto && lie!=='Green' && !(si===0 && (h.par||4)>=4)){
       var pl=null; try{ pl=holePlaysLike(d,pos||null); }catch(e){}
       var club=suggestClub(pl?pl.playsLike:d, lie);
-      if(club && club!==s2.club){ s2.club=club; s2.approach = lie!=='Green' && club!=='P' && approachDefault(idx,si); s2._playsLike=pl?pl.playsLike:null; }
+      if(club && club!==s2.club){ s2.club=club; s2.approach = approachDefault(idx,si,lie); s2._playsLike=pl?pl.playsLike:null; }
     }
     try{ saveDraft(); }catch(e){}
     if(idx===currentHole){ renderShots(idx); refreshSGChips(idx); }
