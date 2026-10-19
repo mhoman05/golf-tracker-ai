@@ -4,7 +4,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
-<title>GolfCaddie AI v71</title>
+<title>GolfCaddie AI v72</title>
 
 <!-- PWA / Home Screen -->
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -160,7 +160,7 @@ select.finput{-webkit-appearance:none;appearance:none;background-image:url("data
 .shot-hdr{display:flex;align-items:center;gap:8px;margin-bottom:10px}
 .shot-badge{width:26px;height:26px;border-radius:50%;background:var(--gm);border:1px solid var(--gold);display:flex;align-items:center;justify-content:center;font-family:'DM Mono',monospace;font-size:.75rem;color:var(--gold);font-weight:700;flex-shrink:0}
 .shot-lbl{font-size:.72rem;font-weight:600;color:var(--tl);text-transform:uppercase;letter-spacing:.4px}
-.rm-shot{position:absolute;top:9px;right:9px;background:none;border:none;color:rgba(192,57,43,.5);font-size:.82rem;cursor:pointer;padding:3px 6px;border-radius:4px;transition:color .18s;-webkit-tap-highlight-color:transparent}
+.rm-shot{position:absolute;top:4px;right:4px;background:none;border:none;color:rgba(192,57,43,.6);font-size:1rem;cursor:pointer;padding:9px 12px;border-radius:4px;transition:color .18s;-webkit-tap-highlight-color:transparent}
 .rm-shot:hover{color:#e74c3c}
 .shot-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:9px}
 .sf label{display:block;font-size:.64rem;font-weight:600;text-transform:uppercase;letter-spacing:.75px;color:var(--tl);margin-bottom:4px}
@@ -172,7 +172,7 @@ select.finput{-webkit-appearance:none;appearance:none;background-image:url("data
 .auto-hint{font-size:.6rem;color:var(--gold);margin-top:3px;font-style:italic}
 .result-row{display:grid;grid-template-columns:repeat(5,1fr);gap:5px}
 .result-row label{font-size:.64rem;font-weight:600;text-transform:uppercase;letter-spacing:.75px;color:var(--tl);margin-bottom:5px;display:block}
-.rbtn{padding:10px 2px;border-radius:8px;border:1px solid rgba(255,255,255,.13);background:rgba(255,255,255,.05);color:rgba(245,240,232,.5);font-family:'DM Sans',sans-serif;font-size:.73rem;font-weight:600;cursor:pointer;transition:all .18s;text-align:center;-webkit-tap-highlight-color:transparent}
+.rbtn{padding:13px 2px;min-height:44px;border-radius:10px;border:1px solid rgba(255,255,255,.13);background:rgba(255,255,255,.05);color:rgba(245,240,232,.5);font-family:'DM Sans',sans-serif;font-size:.73rem;font-weight:600;cursor:pointer;transition:all .18s;text-align:center;-webkit-tap-highlight-color:transparent}
 .rbtn.active-Great{background:rgba(90,171,114,.25);border-color:var(--gl);color:var(--gl)}
 .rbtn.active-Good{background:rgba(52,152,219,.2);border-color:#5dade2;color:#5dade2}
 .rbtn.active-OK{background:rgba(255,255,255,.13);border-color:rgba(255,255,255,.35);color:var(--cream)}
@@ -183,6 +183,8 @@ select.finput{-webkit-appearance:none;appearance:none;background-image:url("data
 .note-row label{display:block;font-size:.64rem;font-weight:600;text-transform:uppercase;letter-spacing:.75px;color:var(--tl);margin-bottom:4px}
 .note-row input{width:100%;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.11);border-radius:8px;padding:10px 12px;color:var(--cream);font-family:'DM Sans',sans-serif;font-size:.88rem;outline:none}
 .note-row input:focus{border-color:rgba(201,168,76,.4)}
+.hole-actions .btn{min-height:52px;font-size:.95rem}
+.histtbl{width:100%;border-collapse:collapse;font-size:.8rem}.histtbl th{font-size:.6rem;text-transform:uppercase;letter-spacing:.5px;color:var(--tl);text-align:left;padding:4px}.histtbl td{padding:7px 4px;border-bottom:1px solid rgba(255,255,255,.07)}
 .hole-actions{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;padding:11px 13px;border-top:1px solid rgba(255,255,255,.07);background:rgba(0,0,0,.15);flex-shrink:0}
 
 /* ROUNDS */
@@ -609,10 +611,11 @@ select.finput{-webkit-appearance:none;appearance:none;background-image:url("data
       </span>
     </div>
     <div id="partnerScores" style="display:none;padding:7px 12px;background:rgba(201,168,76,.08);flex-shrink:0"></div>
-    <div class="shots-area" id="shotsArea"></div>
-    <div class="hole-actions" style="grid-template-columns:1fr 1fr 1fr">
+    <div class="shots-area" id="shotsScroll"><div id="holeHistory"></div><div id="shotsArea"></div></div>
+    <div class="hole-actions" style="grid-template-columns:1fr 1fr">
       <button class="btn btn-ghost" onclick="addShot()">+ Shot</button>
       <button class="btn btn-ghost" onclick="addShot(true)" style="border-color:rgba(192,57,43,.5);color:#e74c3c">⚠️ Penalty</button>
+      <button class="btn btn-ghost" id="btnHoled" onclick="toggleHoled()" style="border-color:rgba(90,171,114,.5);color:var(--gl)">🏁 Holed</button>
       <button class="btn btn-gold" id="btnFinish" onclick="saveAndNext()">Next →</button>
     </div>
     <div style="padding:10px 13px 10px;flex-shrink:0">
@@ -2776,7 +2779,7 @@ function saveAndNext(){
   saveDraft();
   saveCurrentMeta();
   var idx=currentHole;
-  try{ var _ls=(shotData[idx]||[]).slice(-1)[0]; if(_ls && _ls.club==='P' && _ls.lie==='Green') autoCapturePoint('green', idx); }catch(e){}
+  try{ var _ls=(shotData[idx]||[]).slice(-1)[0]; if(_ls && ((_ls.club==='P' && _ls.lie==='Green') || _ls.holed)) autoCapturePoint('green', idx); }catch(e){}
   renderHole(idx+1);
 }
 
@@ -2851,6 +2854,7 @@ function addShot(isPenalty=false) {
     shot.approach = defs.lie !== 'Green' && defs.club !== 'P' && approachDefault(idx, si);
     shot._lieAuto = true; shot._clubAuto = true;
   }
+  shotData[idx].forEach(function(x){ if(x.holed) x.holed=false; });
   shotData[idx].push(shot);
   if (!isPenalty && si === 0) { try{ autoCapturePoint('tee', idx); }catch(e){} }
   else if (!isPenalty && shotData[idx].filter(function(x){ return (x.lie||'')!=='Penalty'; }).length === 2) { try{ autoCaptureBearing(idx); }catch(e){} }
@@ -2860,7 +2864,7 @@ function addShot(isPenalty=false) {
   // After adding a penalty, refresh SG chips so previous shot SG worsens
   if (isPenalty) refreshSGChips(idx);
   else { try{ refreshWeatherIfStale(); autoFillShot(idx, si); }catch(e){} }
-  setTimeout(function(){ var a=document.getElementById('shotsArea'); if(a) a.scrollTop=a.scrollHeight; }, 80);
+  setTimeout(function(){ var a=document.getElementById('shotsScroll'); if(a) a.scrollTop=a.scrollHeight; }, 80);
 }
 
 function removeShot(idx,si) {
@@ -2872,14 +2876,97 @@ function removeShot(idx,si) {
   refreshSGChips(idx);
 }
 
+// ── Hole history (last rounds on this hole) + par 3 club options + "Holed" ──
+var _histOpen = false;   // user's choice once shots exist; the card is always open before the first shot
+function _vLabel(v){ return v==='PinHigh'?'Pin high':(v||''); }
+function holeHistoryRows(courseName, holeNo, par){
+  var rs=rounds.filter(function(r){ return r.course===courseName || r.courseOrig===courseName; })
+    .slice().sort(function(a,b){ return String(b.date).localeCompare(String(a.date)); });
+  var out=[];
+  rs.forEach(function(r){
+    var h=(r.holes||[]).find(function(x){ return x.hole===holeNo; }); if(!h || !h.shots || !h.shots.length) return;
+    var np=h.shots.filter(function(s){ return (s.lie||'')!=='Penalty'; }), s0=np[0], s1=np[1]; if(!s0) return;
+    var row={ date:r.date, club:s0.club||'', dir:s0.direction||null, score:h.score||h.shots.length, par:h.par||par,
+      carry:(par>=4 && s0.distance!=null && s1 && s1.distance!=null)?Math.round(s0.distance-s1.distance):null, ended:'', seq:'' };
+    if(par===3){
+      if(!s1) row.ended='Holed';
+      else { var v=s0.vDir?_vLabel(s0.vDir):''; var d=s1.distance!=null?Math.round(s1.distance)+' m':'';
+        row.ended=((s1.lie||'')==='Green'?'Green':(s1.lie||''))+(v?' · '+v:'')+(d?' · '+d:''); }
+    }
+    row.seq=np.map(function(s){ return (s.club||'?')+(s.distance!=null?' '+Math.round(s.distance):'')+' ('+(s.lie||'')+')'; }).join(' → ');
+    out.push(row);
+  });
+  return out;
+}
+function toggleHistRow(tr){ var n=tr.nextElementSibling; if(n && n.classList.contains('hist-seq')) n.style.display=n.style.display==='none'?'table-row':'none'; }
+function usePar3Club(club){
+  var idx=currentHole; if(!shotData[idx]) shotData[idx]=[];
+  if(!shotData[idx].length) addShot();
+  var s=shotData[idx][0]; if(!s || (s.lie||'')!=='Tee') return;
+  s.club=club; s._clubAuto=false; s.approach=true; try{ saveDraft(); }catch(e){}
+  renderShots(idx);
+}
+function renderHoleHistory(idx){
+  var el=document.getElementById('holeHistory'); if(!el) return;
+  var h=activeHoles[idx]; if(!h){ el.innerHTML=''; return; }
+  var cn=((document.getElementById('courseInput')||{}).value||'').trim(), par=h.par||4;
+  var rows=cn?holeHistoryRows(cn,h.hole,par).slice(0,5):[];
+  var html='';
+  if(par===3){
+    var pl=null; try{ if(h.metres) pl=holePlaysLike(h.metres,null); }catch(e){}
+    var sug=(pl&&suggestClub(pl.playsLike,'Tee'))||null, last=rows.length?rows[0].club:null;
+    var cur=(shotData[idx]&&shotData[idx][0]&&(shotData[idx][0].lie||'')==='Tee')?shotData[idx][0].club:null;
+    if(sug||last){
+      var box=function(label,club,sub,col){ return '<button onclick="usePar3Club(\''+jsStr(club)+'\')" style="text-align:left;background:rgba(0,0,0,.2);border:'+(cur===club?'2px solid var(--gold)':'1px solid rgba(255,255,255,.15)')+';border-radius:10px;padding:10px;color:var(--cream);min-height:64px;cursor:pointer"><div class="mu2" style="'+(col?'color:'+col:'')+'">'+label+'</div><div style="font-size:1.4rem;font-weight:700">'+esc(club)+'</div><div class="mu2">'+esc(sub)+'</div></button>'; };
+      html+='<div class="fold" style="margin-bottom:9px;padding:10px"><div style="font-weight:600;font-size:.85rem;margin-bottom:6px">Tee shot — club</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'
+        +(sug?box('Suggested now',sug,pl?('plays like '+pl.playsLike+' m'):'','var(--gold)'):'')
+        +(last?box('Last time',last,rows[0].ended||''):'')+'</div><div class="mu2" style="margin-top:6px">Tap one to use it. The suggestion uses wind, height and your carries.</div></div>';
+    }
+  }
+  if(rows.length){
+    var sc=rows.map(function(r){ return r.score; }), avgS=sc.reduce(function(a,b){return a+b;},0)/sc.length;
+    var tagged=rows.filter(function(r){ return r.dir; }), left=tagged.filter(function(r){ return r.dir==='Left'; }).length, right=tagged.filter(function(r){ return r.dir==='Right'; }).length;
+    var sum='Average '+avgS.toFixed(1)+' · best '+Math.min.apply(null,sc)+(par>=4&&tagged.length>=3?' · tee shots miss left '+left+' / right '+right+' of '+tagged.length:'');
+    var th=par===3?'<th>Date</th><th>Club</th><th>Ended</th><th style="text-align:right">Score</th>':'<th>Date</th><th>Tee</th><th>Dist</th><th>Dir</th><th style="text-align:right">Score</th>';
+    var body=rows.map(function(r){
+      var dcol=(r.score<r.par)?'var(--gl)':'inherit', dd=r.date?new Date(r.date).toLocaleDateString('en-GB',{day:'numeric',month:'short'}):'';
+      var cells=par===3
+        ?'<td>'+esc(dd)+'</td><td>'+esc(r.club)+'</td><td>'+esc(r.ended)+'</td>'
+        :'<td>'+esc(dd)+'</td><td>'+esc(r.club)+'</td><td>'+(r.carry!=null?r.carry+' m':'—')+'</td><td style="'+(r.dir&&r.dir!=='Center'?'color:#e57373':'')+'">'+esc(r.dir||'—')+'</td>';
+      return '<tr class="hist-row" onclick="toggleHistRow(this)" style="cursor:pointer">'+cells+'<td style="text-align:right;color:'+dcol+'">'+r.score+'</td></tr>'
+        +'<tr class="hist-seq" style="display:none"><td colspan="5" class="mu2" style="padding:2px 4px 8px">'+esc(r.seq)+'</td></tr>';
+    }).join('');
+    html+='<details class="fold" style="margin-bottom:9px" '+(((shotData[idx]||[]).length===0||_histOpen)?'open':'')+' ontoggle="if((shotData[currentHole]||[]).length)_histOpen=this.open"><summary>Hole '+h.hole+' — last '+rows.length+' round'+(rows.length>1?'s':'')+'</summary>'
+      +'<div style="padding:0 12px 10px"><div class="mu2" style="margin-bottom:6px">'+sum+'</div><table class="histtbl">'+'<thead><tr>'+th+'</tr></thead><tbody>'+body+'</tbody></table>'
+      +'<div class="mu2" style="margin-top:6px">'+(par>=4?'Distance is the carry, taken from the next shot\u2019s distance. ':'')+'Tap a row to see that round\u2019s shots.</div></div></details>';
+  }
+  el.innerHTML=html;
+}
+function updateHoledButton(){
+  var b=document.getElementById('btnHoled'); if(!b) return;
+  var np=(shotData[currentHole]||[]).filter(function(s){ return (s.lie||'')!=='Penalty'; }), last=np[np.length-1];
+  var on=!!(last&&last.holed);
+  b.textContent=on?'🏁 Holed ✓':'🏁 Holed';
+  b.style.background=on?'rgba(90,171,114,.28)':'';
+}
+function toggleHoled(){
+  var idx=currentHole, np=(shotData[idx]||[]).filter(function(s){ return (s.lie||'')!=='Penalty'; }), last=np[np.length-1];
+  if(!last){ toast('Log a shot first','err'); return; }
+  last.holed=!last.holed; try{ saveDraft(); }catch(e){}
+  updateHoledButton(); refreshSGChips(idx);
+  if(last.holed) toast('Last shot marked as holed','ok');
+}
+
 function renderShots(idx) {
   const area=document.getElementById('shotsArea');
   if(!shotData[idx]||!shotData[idx].length){
     area.innerHTML=`<div class="empty"><div class="ei">🏌️</div>Tap "+ Shot" to log your first shot</div>`;
+    try{ renderHoleHistory(idx); updateHoledButton(); }catch(e){ console.error('history',e); }
     return;
   }
   area.innerHTML='';
   shotData[idx].forEach((shot,si)=>area.appendChild(buildShotCard(idx,si,shot)));
+  try{ renderHoleHistory(idx); updateHoledButton(); }catch(e){ console.error('history',e); }
 }
 
 function buildShotCard(idx, si, shot) {
@@ -2970,14 +3057,14 @@ function buildShotCard(idx, si, shot) {
     ((showDirVert && !onGreen) || (shot.club && shot.club !== 'P')
       ? '<div style="display:flex;justify-content:space-between;align-items:center;gap:24px;margin:6px 0 10px">' +
           ((showDirVert && !onGreen)
-            ? '<label title="Approach: enables Long / Pin High / Short" style="display:flex;align-items:center;gap:7px;font-size:.78rem;color:var(--cream);cursor:pointer">' +
+            ? '<label title="Approach: enables Long / Pin High / Short" style="display:flex;align-items:center;gap:7px;font-size:.9rem;color:var(--cream);cursor:pointer">' +
                 '<input type="checkbox" ' + (shot.approach ? 'checked' : '') +
-                ' onchange="setApproach(' + idx + ',' + si + ',this.checked)" style="width:20px;height:20px"/>\ud83c\udfaf Aimed at green</label>'
+                ' onchange="setApproach(' + idx + ',' + si + ',this.checked)" style="width:28px;height:28px"/>\ud83c\udfaf Aimed at green</label>'
             : '<span></span>') +
           ((shot.club && shot.club !== 'P')
             ? '<label class="full-swing-row" title="Untick for a knock-down / part shot so it doesn\u2019t skew your club distances" style="display:flex;align-items:center;gap:7px;font-size:.78rem;color:var(--tl);cursor:pointer">' +
                 'Full swing<input type="checkbox" ' + (shot.full === false ? '' : 'checked') +
-                ' onchange="updShot(' + idx + ',' + si + ',\'full\',this.checked)" style="width:20px;height:20px"/></label>'
+                ' onchange="updShot(' + idx + ',' + si + ',\'full\',this.checked)" style="width:28px;height:28px"/></label>'
             : '') +
         '</div>'
       : '') +
@@ -3195,7 +3282,7 @@ function shotSG(idx, si) {
   // No further shot logged. Only treat as holed if this shot is a short putt
   // from the green — otherwise the hole is just unfinished and SG is unknown.
   if (expAfter === null) {
-    if (lie === 'Green' || (lie === 'Fringe' && shot.club === 'P')) expAfter = 0;
+    if (lie === 'Green' || (lie === 'Fringe' && shot.club === 'P') || shot.holed) expAfter = 0;
     else return null;
   }
 
@@ -3363,7 +3450,7 @@ function discardRound() {
 
 function finishRound() {
   saveCurrentMeta();
-  try{ var _lh=currentHole, _ls=(shotData[_lh]||[]).slice(-1)[0]; if(_ls && _ls.club==='P' && _ls.lie==='Green') autoCapturePoint('green', _lh); }catch(e){}
+  try{ var _lh=currentHole, _ls=(shotData[_lh]||[]).slice(-1)[0]; if(_ls && ((_ls.club==='P' && _ls.lie==='Green') || _ls.holed)) autoCapturePoint('green', _lh); }catch(e){}
   const course=document.getElementById('courseInput').value.trim();
   const date=document.getElementById('roundDate').value;
   const par=parseInt(document.getElementById('coursePar').value);
@@ -3377,7 +3464,7 @@ function finishRound() {
     actualPar+=(h.par||4);
     holes.push({hole:h.hole,par:h.par,metres:h.metres,hdcp:h.hdcp,elev:(h.elev!=null?h.elev:null),name:h.name,
       strategy:h.strategy||null,hazards:h.hazards||null,diagram:h.diagram||null,score:shots.length,
-      shots:shots.map(s=>({club:s.club,lie:s.lie||s.type||'',distance:s.distance,direction:s.direction||null,vDir:s.vDir||null,approach:s.approach===true?true:(s.approach===false?false:undefined),full:s.full!==false,result:s.result,note:s.note}))});
+      shots:shots.map(s=>({club:s.club,lie:s.lie||s.type||'',distance:s.distance,direction:s.direction||null,vDir:s.vDir||null,approach:s.approach===true?true:(s.approach===false?false:undefined),holed:s.holed===true?true:undefined,full:s.full!==false,result:s.result,note:s.note}))});
   });
   if(!holes.length){toast('No shots logged','err');return;}
   const round={id:Date.now().toString(),course,date,par:actualPar,weather,score:totalScore,
@@ -3691,7 +3778,7 @@ function collectShotSG() {
           break;
         }
         if (ea === null) {
-          if (lie === 'Green' || (lie === 'Fringe' && s.club === 'P')) { ea = 0; holed = true; }
+          if (lie === 'Green' || (lie === 'Fringe' && s.club === 'P') || s.holed) { ea = 0; holed = true; }
           else return;
         }
         var sg = eb - ea - 1 - pen;
@@ -3938,7 +4025,7 @@ function calcSG(adjustForHcp) {
         // No further shot logged: only a short green putt counts as holed,
         // anything else is an unfinished hole and can't be scored.
         if (expAfter === null) {
-          if (lie === 'Green' || (lie === 'Fringe' && s.club === 'P')) expAfter = 0;
+          if (lie === 'Green' || (lie === 'Fringe' && s.club === 'P') || s.holed) expAfter = 0;
           else return;
         }
         var sg = expBefore - expAfter - 1 - penaltyCount - perShotAdj;
