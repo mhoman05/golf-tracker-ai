@@ -4,7 +4,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
-<title>GolfCaddie AI v78</title>
+<title>GolfCaddie AI v79</title>
 
 <!-- PWA / Home Screen -->
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -3978,7 +3978,7 @@ function sgSum(list) { return list.reduce(function(a, x) { return a + x.sg; }, 0
 
 // Putting averages: per round, per hole, per green in regulation
 function puttingAveragesHtml(){
-  var rp=[], holes=0, putts=0, girH=0, girP=0, nGirH=0, nGirP=0;
+  var r18=[], r9=[], holes=0, putts=0, girH=0, girP=0, nGirH=0, nGirP=0;
   rounds.forEach(function(r){
     var hs=(r.holes||[]).filter(function(h){ return h.shots && h.shots.length; }); if(!hs.length) return;
     var rPutts=0, rHoles=0;
@@ -3987,13 +3987,16 @@ function puttingAveragesHtml(){
       rPutts+=st.putts; rHoles++; holes++; putts+=st.putts;
       if(st.gir){ girH++; girP+=st.putts; } else { nGirH++; nGirP+=st.putts; }
     });
-    if(rHoles>=hs.length*0.8) rp.push({ putts:rPutts, per18:rPutts/hs.length*18 });
+    if(rHoles>=hs.length*0.8){ if(hs.length>=18) r18.push(rPutts); else if(hs.length<=9) r9.push(rPutts); }
   });
   if(!holes) return '';
-  var avgR=rp.length?rp.reduce(function(a,x){return a+x.putts;},0)/rp.length:null, avg18=rp.length?rp.reduce(function(a,x){return a+x.per18;},0)/rp.length:null;
+  var mean=function(a){ return a.length?a.reduce(function(x,y){return x+y;},0)/a.length:null; };
+  var m18=mean(r18), m9=mean(r9);
   var tile=function(label,val,sub){ return '<div class="kpi-tile"><div class="kpi-tl">'+label+'</div><div class="kpi-tv">'+val+'</div><div class="mu2">'+sub+'</div></div>'; };
   return '<div class="kpi-grid">'
-    +tile('Putts / round',avgR!=null?avgR.toFixed(1):'—',rp.length+' round'+(rp.length===1?'':'s')+(avg18!=null?' · '+avg18.toFixed(1)+' per 18 holes':''))
+    +'<div class="kpi-tile" style="grid-column:1/-1"><div class="kpi-tl">Putts / round</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:2px">'
+      +'<div><div class="kpi-tv">'+(m18!=null?m18.toFixed(1):'—')+'</div><div class="mu2">18 holes · '+r18.length+' round'+(r18.length===1?'':'s')+'</div></div>'
+      +'<div><div class="kpi-tv">'+(m9!=null?m9.toFixed(1):'—')+'</div><div class="mu2">9 holes · '+r9.length+' round'+(r9.length===1?'':'s')+'</div></div></div></div>'
     +tile('Putts / hole',(putts/holes).toFixed(2),holes+' holes with putts')
     +tile('Putts / GIR hole',girH?(girP/girH).toFixed(2):'—',girH+' greens hit')
     +tile('Putts / missed GIR',nGirH?(nGirP/nGirH).toFixed(2):'—',nGirH+' holes (chip or pitch first)')
