@@ -4,7 +4,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
-<title>GolfCaddie AI v84</title>
+<title>GolfCaddie AI v85</title>
 
 <!-- PWA / Home Screen -->
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -741,11 +741,11 @@ select.finput{-webkit-appearance:none;appearance:none;background-image:url("data
   </div>
   <div class="rd-scroll" style="padding:16px">
     <p style="font-size:.8rem;color:var(--tl);margin-bottom:14px;line-height:1.6">
-      Enter your stock carry distances in metres for each club. These are used for club recommendations and blended with distances from your actual rounds as you log more data.
+      Enter your usual distances in metres for each club (total distance, including roll). These are used for club recommendations and blended with distances from your actual rounds as you log more data.
     </p>
     <div id="clubSettingsRows"></div>
     <p style="font-size:.72rem;color:var(--tl);margin-top:12px;line-height:1.5">
-      💡 Tip: Enter your comfortable, consistent carry distance — not your best ever. Leave blank if you don't carry that club.
+      💡 Tip: Enter your comfortable, consistent distance — not your best ever. Leave blank if you don't use that club.
     </p>
   </div>
 </div>
@@ -1019,7 +1019,7 @@ select.finput{-webkit-appearance:none;appearance:none;background-image:url("data
     <!-- ═══ CLUB DISTANCE ACCURACY ═══ -->
     <div class="modal-sec">
       <h3>🎯 Club Distance Accuracy</h3>
-      <p style="margin-bottom:9px;font-size:.79rem;color:var(--tl)">Your club averages use <strong>full-swing shots only</strong> (untick “Full swing” when you take something off), and drop any carry that is more than this far from your normal for that club.</p>
+      <p style="margin-bottom:9px;font-size:.79rem;color:var(--tl)">Your club averages use <strong>full-swing shots only</strong> (untick “Full swing” when you take something off), and drop any distance that is more than this far from your normal for that club.</p>
       <label class="flabel">Ignore carries more than this % from normal</label>
       <div style="display:flex;align-items:center;gap:10px">
         <input type="range" id="outlierPctInput" min="10" max="50" step="5" style="flex:1" oninput="document.getElementById('outlierPctVal').textContent=this.value+'%'"/>
@@ -3061,7 +3061,7 @@ function holeHistoryRows(courseName, holeNo, par){
     var h=(r.holes||[]).find(function(x){ return x.hole===holeNo; }); if(!h || !h.shots || !h.shots.length) return;
     var np=h.shots.filter(function(s){ return (s.lie||'')!=='Penalty'; }), s0=np[0], s1=np[1]; if(!s0) return;
     var row={ date:r.date, club:s0.club||'', dir:s0.direction||null, score:h.score||h.shots.length, par:h.par||par,
-      carry:(par>=4 && s0.distance!=null && s1 && s1.distance!=null)?Math.round(s0.distance-s1.distance):null, ended:'', seq:'' };
+      carry:(par>=4 && s0.meas && s0.meas.len>0)?Math.round(s0.meas.len):((par>=4 && s0.distance!=null && s1 && s1.distance!=null)?Math.round(s0.distance-s1.distance):null), ended:'', seq:'' };
     if(par===3){
       if(!s1) row.ended='Holed';
       else { var v=s0.vDir?_vLabel(s0.vDir):''; var d=s1.distance!=null?Math.round(s1.distance)+' m':'';
@@ -3140,7 +3140,7 @@ function renderHoleHistory(idx){
     }).join('');
     html+='<details class="fold" style="margin-bottom:9px" '+(((shotData[idx]||[]).length===0||_histOpen)?'open':'')+' ontoggle="if((shotData[currentHole]||[]).length)_histOpen=this.open"><summary>Hole '+h.hole+' — last '+rows.length+' round'+(rows.length>1?'s':'')+'</summary>'
       +'<div style="padding:0 12px 10px"><div class="mu2" style="margin-bottom:6px">'+sum+'</div><table class="histtbl">'+'<thead><tr>'+th+'</tr></thead><tbody>'+body+'</tbody></table>'
-      +'<div class="mu2" style="margin-top:6px">'+(par>=4?'Distance is the carry, taken from the next shot\u2019s distance. ':'')+'Tap a row to see that round\u2019s shots.</div></div></details>';
+      +'<div class="mu2" style="margin-top:6px">'+(par>=4?'Distance is the total length of the tee shot, measured by GPS when available, otherwise from the next shot\u2019s distance. ':'')+'Tap a row to see that round\u2019s shots.</div></div></details>';
   }
   el.innerHTML=html;
 }
@@ -4995,7 +4995,8 @@ function trimOutliers(arr, pct){
   var kept=arr.filter(function(v){ return v>=lo && v<=hi; });
   return kept.length>=2 ? kept : arr.slice();
 }
-// Raw full-swing carry samples per club across all saved rounds.
+// Raw full-swing distance samples per club across all saved rounds (total distance, including roll).
+// Uses the GPS-measured length when a shot has one, otherwise the drop in distance-to-pin.
 // A shot counts only if: full swing (s.full !== false), club is a non-putter,
 // lie is not Recovery/Penalty/Green, it has a distance, and a following shot's
 // distance exists to derive the carry from.
@@ -5007,6 +5008,8 @@ function clubCarrySamples(){
       if(lie==='Recovery'||lie==='Penalty'||lie==='Green') return;
       if(!s.club||s.club==='P') return;
       if(s.full===false) return;              // knock-down / partial — excluded from club averages
+      // GPS-measured length (where this shot was played from to where the next was played from) is preferred
+      if(s.meas && s.meas.len>0 && s.meas.len<=450){ (m[s.club]=m[s.club]||[]).push(s.meas.len); return; }
       if(s.distance==null) return;
       var nd=null;
       for(var j=si+1;j<h.shots.length;j++){
@@ -5607,7 +5610,7 @@ function playerContextBlock() {
   var avgH = avgHcp();
   if (avgH !== null) lines.push('Average playing handicap: ' + avgH.toFixed(1));
   var prof = clubProfile();
-  lines.push('\nClub carry distances (metres):\n' + (prof || 'No club distance data logged yet.'));
+  lines.push('\nClub distances, total including roll (metres):\n' + (prof || 'No club distance data logged yet.'));
   lines.push('\nStrokes Gained per shot vs scratch baseline: ' + sgStr());
   var rs = roundStr();
   if (rs) lines.push('\nRecent rounds: ' + rs);
