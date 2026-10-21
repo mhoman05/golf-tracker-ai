@@ -4,7 +4,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
-<title>GolfCaddie AI v81</title>
+<title>GolfCaddie AI v82</title>
 
 <!-- PWA / Home Screen -->
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -671,21 +671,23 @@ select.finput{-webkit-appearance:none;appearance:none;background-image:url("data
     <div class="scroll">
       <div class="ai-panel">
         <h2>🎯 Club Recommender <span class="badge">Claude AI</span></h2>
+        <div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:8px"><div id="cxNote" style="flex:1;font-size:.72rem;color:var(--tl);line-height:1.4">Conditions fill in automatically for where you stand.</div><button class="btn btn-ghost btn-sm" onclick="caddieAutoFill(true)">↻ Refresh</button></div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:10px">
           <div class="sf"><label>Distance to pin (m)</label><input type="number" id="cDist" placeholder="140"/></div>
           <div class="sf"><label>Lie</label>
             <select id="cLie"><option>Fairway</option><option>Rough</option><option>Tee</option><option>Bunker</option><option>Fringe</option></select>
           </div>
           <div class="sf"><label>Elevation change (m, + up / − down)</label><input type="number" id="cElevM" placeholder="0" min="-60" max="60"/></div>
-          <div class="sf"><label>Hole plays toward</label>
+          <div class="sf"><label>Shot plays toward</label>
             <select id="cShotDir"><option value="">—</option><option>N</option><option>NE</option><option>E</option><option>SE</option><option>S</option><option>SW</option><option>W</option><option>NW</option></select>
+            <button class="btn btn-ghost btn-sm" style="margin-top:6px;width:100%" onclick="cxPointPhone()">🧭 Point phone at target</button>
           </div>
           <div class="sf"><label>Wind speed (km/h)</label><input type="number" id="cWindKmh" placeholder="—" min="0" max="80"/></div>
           <div class="sf"><label>Wind from</label>
             <select id="cWindDir"><option value="">—</option><option>N</option><option>NE</option><option>E</option><option>SE</option><option>S</option><option>SW</option><option>W</option><option>NW</option></select>
           </div>
           <div class="sf"><label>Temp (°C)</label><input type="number" id="cTemp" placeholder="auto" min="-10" max="50"/></div>
-          <div class="sf"><label>Course altitude (m)</label><input type="number" id="cAlt" placeholder="auto" min="0" max="4000"/></div>
+          <div class="sf"><label>Altitude here (m)</label><input type="number" id="cAlt" placeholder="auto" min="0" max="4000"/></div>
         </div>
         <button class="btn btn-gold btn-block" onclick="getClubRec()">🎯 Recommend Club</button>
         <div id="recResp" class="ai-resp" style="display:none"></div>
@@ -2136,6 +2138,7 @@ function goTab(t) {
     try { renderCaddieClubTable(); } catch(e) { console.error(e); }
     try { renderHolePlanner();     } catch(e) { console.error(e); }
     try { prefillCaddieConditions(); } catch(e) { console.error(e); }
+    try { caddieAutoFill(false); } catch(e) { console.error(e); }
   }
   if (t === 'stats')  { try { renderStats();  } catch(e) { console.error(e); } }
   if (t === 'practice') { try { renderPractice(); } catch(e) { console.error(e); } }
@@ -5604,7 +5607,7 @@ function buildCaddiePrompt(question) {
 
 // Auto-fill the caddie condition fields from the current round's conditions
 function prefillCaddieConditions(){
-  var set=function(id,v){ var e=document.getElementById(id); if(e && (e.value===''||e.value==null) && v!=null && v!=='') e.value=v; };
+  var set=function(id,v){ cxSet(id,v); };
   set('cWindKmh', activeWindSpeed);
   set('cWindDir', activeWindDir);
   set('cTemp', activeConditions.tempC);
@@ -5619,6 +5622,93 @@ function prefillCaddieConditions(){
     set('cShotDir', dirs[Math.round(deg/45)%8]);
   }
 }
+// ── Caddie: auto-fill conditions for where you are right now, and a compass for the shot direction ──
+var _cx = { ts:0, busy:false, windDeg:null, shotDeg:null, pressure:null };
+var _CX_IDS = ['cDist','cLie','cElevM','cShotDir','cWindKmh','cWindDir','cTemp','cAlt'];
+function _cxDir8(deg){ return ['N','NE','E','SE','S','SW','W','NW'][Math.round(deg/45)%8]; }
+function _cxBucket(deg){ return (Math.round(deg/45)*45)%360; }
+function cxSet(id, v){
+  var e=document.getElementById(id); if(!e || v==null || v==='' || (typeof v==='number' && isNaN(v))) return;
+  if(e.value==='' || e.dataset.auto==='1'){ e.value=v; e.dataset.auto='1'; }
+}
+function cxBind(){
+  _CX_IDS.forEach(function(id){
+    var e=document.getElementById(id); if(!e || e.dataset.bound) return; e.dataset.bound='1';
+    var clear=function(){ e.dataset.auto=''; if(id==='cWindDir') _cx.windDeg=null; if(id==='cShotDir') _cx.shotDeg=null; };
+    e.addEventListener('input',clear); e.addEventListener('change',clear);
+  });
+}
+function cxNote(t, color){ var n=document.getElementById('cxNote'); if(n){ n.textContent=t; n.style.color=color||'var(--tl)'; } }
+// Shot you're about to play: lie and distance from the last logged shot of this hole, elevation from the hole
+function cxFillFromRound(){
+  var h=activeHoles[currentHole]; if(!h) return;
+  cxSet('cElevM', h.elev);
+  var np=(shotData[currentHole]||[]).filter(function(s){ return (s.lie||'')!=='Penalty'; }), last=np[np.length-1];
+  if(last && (last.lie||'')!=='Green'){
+    var lie={Fairway:'Fairway',Rough:'Rough',Tee:'Tee',Bunker:'Bunker',Fringe:'Fringe',Recovery:'Rough'}[last.lie];
+    if(lie) cxSet('cLie', lie);
+    if(last.distance!=null) cxSet('cDist', Math.round(last.distance));
+  }
+  var deg=holeBearing(); if(deg!=null && !_cx.shotDeg) cxSet('cShotDir', _cxDir8(deg));
+}
+function caddieAutoFill(force){
+  if(isTournament()){ cxNote('Conditions and club advice are off in tournament rounds.'); return; }
+  cxBind();
+  try{ cxFillFromRound(); }catch(e){}
+  if(_cx.busy) return;
+  if(!force && Date.now()-_cx.ts < 10*60000) return;
+  if(!navigator.geolocation){ cxNote('No location on this device — enter the conditions by hand.','#e0a94b'); return; }
+  _cx.busy=true; cxNote('Getting your location…');
+  var here=null;
+  getBestPos(5000,15).then(function(p){
+    here={lat:p.coords.latitude,lng:p.coords.longitude};
+    cxNote('Fetching wind, temperature and altitude…');
+    var lat=here.lat.toFixed(4), lng=here.lng.toFixed(4);
+    return Promise.all([
+      fetch('https://api.open-meteo.com/v1/forecast?latitude='+lat+'&longitude='+lng+'&current=temperature_2m,wind_speed_10m,wind_direction_10m,surface_pressure&wind_speed_unit=kmh').then(function(r){ return r.json(); }),
+      fetch('https://api.open-meteo.com/v1/elevation?latitude='+lat+'&longitude='+lng).then(function(r){ return r.json(); }).catch(function(){ return null; })
+    ]);
+  }).then(function(res){
+    var c=res[0]&&res[0].current; if(!c) throw new Error('No weather data returned');
+    cxSet('cWindKmh', Math.round(c.wind_speed_10m||0));
+    if(c.wind_direction_10m!=null){ cxSet('cWindDir', _cxDir8(c.wind_direction_10m)); _cx.windDeg=Math.round(c.wind_direction_10m); }
+    if(c.temperature_2m!=null) cxSet('cTemp', Math.round(c.temperature_2m*10)/10);
+    if(c.surface_pressure!=null) _cx.pressure=Math.round(c.surface_pressure);
+    var el=res[1]&&res[1].elevation&&res[1].elevation[0]; if(el!=null) cxSet('cAlt', Math.round(el));
+    // distance to the green from where you stand, if no shot distance is known yet
+    var tgt=greenTargetPt(); if(tgt && here){ var d=Math.round(haversine(here,tgt)); var h=activeHoles[currentHole]; if(d>=4 && (!h||!h.metres||d<=h.metres+40)) cxSet('cDist', d); }
+    _cx.ts=Date.now();
+    cxNote('✓ Filled for your location at '+new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})+(el!=null?' · '+Math.round(el)+' m above sea level':'')+(c.surface_pressure?' · '+Math.round(c.surface_pressure)+' hPa':'')+'. Anything you type stays as you typed it.','var(--gl)');
+  }).catch(function(e){ cxNote('⚠️ '+(e&&e.message?e.message:'Could not fill the conditions')+' — enter them by hand.','#e0a94b'); })
+    .then(function(){ _cx.busy=false; });
+}
+// Average the compass over ~1.2 s (call from a tap: iOS asks for permission on a gesture)
+function getHeadingAvg(ms){
+  return new Promise(function(res,rej){
+    function attach(){
+      var xs=0, ys=0, n=0;
+      function h(e){
+        var hd=(e.webkitCompassHeading!=null)?e.webkitCompassHeading:((e.absolute && e.alpha!=null)?(360-e.alpha)%360:null);
+        if(hd==null) return; xs+=Math.cos(hd*Math.PI/180); ys+=Math.sin(hd*Math.PI/180); n++;
+      }
+      function cleanup(){ window.removeEventListener('deviceorientationabsolute',h); window.removeEventListener('deviceorientation',h); }
+      window.addEventListener('deviceorientationabsolute',h); window.addEventListener('deviceorientation',h);
+      setTimeout(function(){ cleanup(); if(!n){ rej(new Error('No compass reading from this phone')); return; } res(Math.round((Math.atan2(ys,xs)*180/Math.PI+360)%360)); }, ms||1200);
+    }
+    if(typeof DeviceOrientationEvent!=='undefined' && typeof DeviceOrientationEvent.requestPermission==='function'){
+      DeviceOrientationEvent.requestPermission().then(function(p){ p==='granted'?attach():rej(new Error('Compass permission denied')); }).catch(rej);
+    } else attach();
+  });
+}
+function cxPointPhone(){
+  cxNote('Hold the phone flat with its top edge pointing at your target…');
+  getHeadingAvg(1200).then(function(deg){
+    var e=document.getElementById('cShotDir'); if(!e) return;
+    e.value=_cxDir8(deg); e.dataset.auto='1'; _cx.shotDeg=deg;
+    cxNote('✓ Shot plays toward '+deg+'° ('+_cxDir8(deg)+')','var(--gl)');
+  }).catch(function(err){ cxNote('⚠️ '+err.message+' — choose the direction by hand.','#e0a94b'); });
+}
+
 // Gather the plays-like condition inputs from the caddie form
 function caddieConditions(){
   var g=function(id){ return (document.getElementById(id)||{}).value; };
@@ -5626,11 +5716,13 @@ function caddieConditions(){
   return {
     elevChange: elevM!=='' && elevM!=null ? parseFloat(elevM) : null,
     windKmh:    windKmh!=='' && windKmh!=null ? parseFloat(windKmh) : (activeWindSpeed||null),
-    windFromDeg: COMPASS_DEG[g('cWindDir')] != null ? COMPASS_DEG[g('cWindDir')]
-                 : (activeConditions.windFromDeg!=null ? activeConditions.windFromDeg : COMPASS_DEG[activeWindDir]),
-    shotDeg:    COMPASS_DEG[g('cShotDir')] != null ? COMPASS_DEG[g('cShotDir')] : null,
+    windFromDeg: (_cx.windDeg!=null && _cxBucket(_cx.windDeg)===COMPASS_DEG[g('cWindDir')]) ? _cx.windDeg
+                 : (COMPASS_DEG[g('cWindDir')] != null ? COMPASS_DEG[g('cWindDir')]
+                 : (activeConditions.windFromDeg!=null ? activeConditions.windFromDeg : COMPASS_DEG[activeWindDir])),
+    shotDeg:    (_cx.shotDeg!=null && _cxBucket(_cx.shotDeg)===COMPASS_DEG[g('cShotDir')]) ? _cx.shotDeg
+                : (COMPASS_DEG[g('cShotDir')] != null ? COMPASS_DEG[g('cShotDir')] : null),
     tempC:      temp!=='' && temp!=null ? parseFloat(temp) : activeConditions.tempC,
-    pressureHpa: activeConditions.pressureHpa,
+    pressureHpa: _cx.pressure!=null ? _cx.pressure : activeConditions.pressureHpa,
     altM:       alt!=='' && alt!=null ? parseFloat(alt) : courseAltitude()
   };
 }
