@@ -4,7 +4,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
-<title>GolfCaddie AI v79</title>
+<title>GolfCaddie AI v81</title>
 
 <!-- PWA / Home Screen -->
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -503,6 +503,10 @@ select.finput{-webkit-appearance:none;appearance:none;background-image:url("data
             <button class="round-type-btn active" id="rtb-casual" onclick="setRoundType('casual')">🏌️ Casual Round</button>
             <button class="round-type-btn" id="rtb-tournament" onclick="setRoundType('tournament')">🏆 Tournament</button>
           </div>
+          <div id="tournBox" style="display:none;margin-top:8px;font-size:.78rem;color:var(--tl);line-height:1.5">
+            Off: plays-like distances, wind and weather, live elevation lookups, the Caddie and club suggestions. Still on: your hole history, notes, saved elevation, last time's club and your recorded distances, like a yardage book. Check your competition's local rules.
+            <label style="display:flex;gap:8px;align-items:center;margin-top:6px;color:var(--cream)"><input type="checkbox" id="tournNoDist" style="width:22px;height:22px" onchange="saveDraft()"/>Competition bans distance devices: turn off GPS distance too</label>
+          </div>
         </div>
 
         <label class="flabel">Course</label>
@@ -574,7 +578,7 @@ select.finput{-webkit-appearance:none;appearance:none;background-image:url("data
   <div class="screen" id="screen-hole">
     <div class="progress-strip"><div class="progress-fill" id="progressFill"></div></div>
     <div style="display:flex;gap:6px;padding:5px 12px;background:rgba(0,0,0,.15);flex-shrink:0;align-items:center">
-      <span style="font-size:.62rem;color:var(--tl)" id="holeWindDisplay">🌬️ —</span> <span style="font-size:.62rem;color:var(--gold)" id="holeFocusDisplay"></span>
+      <span style="font-size:.62rem;color:var(--tl)" id="holeWindDisplay">🌬️ —</span> <span style="font-size:.62rem;color:var(--gold)" id="holeFocusDisplay"></span> <span style="font-size:.62rem;color:#e8c872" id="holeTournBadge"></span>
       <span style="font-size:.6rem;color:var(--tl);margin-left:auto">Pin</span>
       <select id="pinPos" onchange="updateHoleGpsReadout()" style="flex:0 0 auto;width:90px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);border-radius:6px;color:var(--cream);font-size:.7rem;padding:3px 5px">
         <option value="">—</option><option>Left</option><option>Centre</option>
@@ -1259,6 +1263,7 @@ function saveDraft(){
       weather:(document.getElementById('weather')||{}).value||'Sunny',
       playingHcp:(document.getElementById('playingHcp')||{}).value||'',
       windSpeed:activeWindSpeed, windDir:activeWindDir,
+      roundType:(document.getElementById('activeRoundType')||{}).value||'casual', noDist:!!(document.getElementById('tournNoDist')||{}).checked,
       activeHoles:activeHoles,shotData:shotData,currentHole:currentHole,
       roundPlayers:roundPlayers, playerScores:playerScores,
       conditions:activeConditions, startMs:_roundStartMs,
@@ -1292,6 +1297,7 @@ function loadDraft(){
       playerScores=d.playerScores||{};
       if(d.conditions) activeConditions=Object.assign({tempC:null,pressureHpa:null,windFromDeg:null,altM:null},d.conditions);
       _partnerSeq=roundPlayers.reduce(function(m,p){return Math.max(m,p.id||0);},0);
+      setRoundType(d.roundType||'casual'); if(d.noDist && g('tournNoDist')) g('tournNoDist').checked=true;
       activeWindSpeed=d.windSpeed!=null?d.windSpeed:null;
       activeWindDir=d.windDir||'';
       if(g('windSpeed')) g('windSpeed').value=activeWindSpeed!=null?activeWindSpeed:'';
@@ -2113,6 +2119,7 @@ function renderPractice(){
 
 
 function goTab(t) {
+  if (t === 'caddie' && isTournament()) { tournamentBlock('The Caddie'); return; }
   ['setup','rounds','stats','practice','caddie'].forEach(function(x) {
     var scr = document.getElementById('screen-'+x);
     var btn = document.getElementById('tb-'+x);
@@ -2856,6 +2863,7 @@ function renderHole(idx) {
   document.getElementById('hMetres').value=h.metres||'';
   document.getElementById('hHdcp').value=h.hdcp||'';
   var he=document.getElementById('hElev'); if(he) he.value=(h.elev!=null?h.elev:'');
+  try{ var tb=document.getElementById('holeTournBadge'); if(tb) tb.textContent=isTournament()?'\ud83c\udfc6 Tournament: plays-like, wind and club tips are off'+(noGpsDistance()?', GPS distance too':''):''; }catch(e){}
   try{ updateFocusLine(); }catch(e){}
   var windDisp = document.getElementById('holeWindDisplay');
   if (windDisp) windDisp.textContent = holeWindText() || '🌬️ —';
@@ -3624,6 +3632,7 @@ function discardRound() {
   activeHoles = [];
   currentHole = 0;
   roundPlayers = []; playerScores = {}; try{ renderPartners(); }catch(e){}
+  try{ setRoundType('casual'); }catch(e){}
   exitHoleScreen();
   toast('Round discarded', 'inf');
 }
@@ -3678,6 +3687,7 @@ function finishRound() {
     });
   }
   roundPlayers=[]; playerScores={}; activeConditions={tempC:null,pressureHpa:null,windFromDeg:null,altM:null};
+  try{ setRoundType('casual'); }catch(e){}
   try{ renderPartners(); }catch(e){}
   exitHoleScreen();
   goTab('rounds');
@@ -4777,6 +4787,7 @@ function _renderStatsInner() {
 }
 
 function openCaddieFromHole() {
+  if (isTournament()) { tournamentBlock('The Caddie'); return; }
   // Render hole planner into the overlay
   var cont = document.getElementById('caddieOverlayContent');
   if (!cont) return;
@@ -5879,6 +5890,9 @@ function roundToBlocks(round){
 // ══════════════════════════════════════════════
 function setRoundType(t){
   document.getElementById('activeRoundType').value=t;
+  var tbx=document.getElementById('tournBox'); if(tbx) tbx.style.display=t==='tournament'?'block':'none';
+  if(t!=='tournament'){ var nd=document.getElementById('tournNoDist'); if(nd) nd.checked=false; }
+  try{ if(activeHoles.length) renderHole(currentHole); }catch(e){}
   document.querySelectorAll('.round-type-btn').forEach(b=>{
     b.classList.toggle('active', b.id==='rtb-'+t);
   });
@@ -6933,6 +6947,7 @@ function applyHoleElev(holeIdx, d){
 }
 // Batch height lookup: pts [{lat,lng}] -> Promise<[m,...]>
 function lookupElevations(pts){
+  if(isTournament()) return Promise.reject(new Error('tournament'));
   return fetch('https://api.open-meteo.com/v1/elevation?latitude='+pts.map(function(p){return p.lat.toFixed(5);}).join(',')
     +'&longitude='+pts.map(function(p){return p.lng.toFixed(5);}).join(','))
     .then(function(x){return x.json();}).then(function(e){
@@ -6978,6 +6993,7 @@ function getBestPos(maxMs, goodAcc){
 // (pin and tee-marker positions move day to day, so the mean converges on the true centre).
 // Suggest the club whose usual carry best matches the plays-like distance
 function suggestClub(target, lie){
+  if(isTournament()) return null;
   if(target==null || isNaN(target)) return null;
   if(lie==='Green') return 'P';
   var t=target;
@@ -7013,7 +7029,7 @@ function autoFillShot(idx, si){
   }
   if(lie==='Green') return;
   if(si===0){ if(shot.distance!=null) finish(null,null); return; }       // tee shot: hole length from the card
-  var tgt=greenTargetPt(); if(!tgt || !navigator.geolocation) return;
+  var tgt=greenTargetPt(); if(!tgt || !navigator.geolocation || noGpsDistance()) return;
   getBestPos(3500,6).then(function(p){
     if((p.coords.accuracy||99)>20) return;
     var here={lat:p.coords.latitude,lng:p.coords.longitude};
@@ -7108,6 +7124,7 @@ function gpsMarkHere(){
 }
 var _lastGpsToGreen=null, _lastPlaysLike=null, _lastGpsFix=null;
 function gpsMeasure(){
+  if (noGpsDistance()) { tournamentBlock('GPS distance'); return; }
   var el=document.getElementById('gpsReadout'); if(el){ el.style.color='var(--tl)'; el.textContent='📡 locating…'; }
   getPos().then(function(p){
     var cur={lat:p.coords.latitude,lng:p.coords.longitude};
@@ -7172,6 +7189,7 @@ function refreshWeatherIfStale(){
   if(_wxAutoTs && Date.now()-_wxAutoTs>90*60000){ _wxAutoTs=Date.now(); autoWeather(); }
 }
 function autoWeather(){
+  if(isTournament()){ var nt=document.getElementById('autoWxNote'); if(nt){ nt.style.display='block'; nt.style.color='var(--tl)'; nt.textContent='Weather and wind readings are off in tournament rounds.'; } return; }
   var note=document.getElementById('autoWxNote');
   if(note){ note.style.display='block'; note.style.color='var(--tl)'; note.textContent='Getting your location…'; }
   getPos().then(function(p){
@@ -7218,7 +7236,11 @@ function autoWeather(){
 // ══════════════════════════════════════════════
 // PLAYS-LIKE DISTANCE ENGINE  (deterministic; coefficients are tunable)
 // ══════════════════════════════════════════════
-function playsLikeOn(){ return localStorage.getItem('gcai_playslike_off')!=='1'; }
+// Tournament rounds: no plays-like, wind, elevation, weather or club recommendations (Rule 4.3 of the Rules of Golf)
+function isTournament(){ var e=document.getElementById('activeRoundType'); return !!(e && e.value==='tournament'); }
+function noGpsDistance(){ var e=document.getElementById('tournNoDist'); return isTournament() && !!(e && e.checked); }
+function tournamentBlock(what){ toast((what||'This')+' is switched off in tournament rounds','inf'); }
+function playsLikeOn(){ return localStorage.getItem('gcai_playslike_off')!=='1' && !isTournament(); }
 function getCourseAltOverride(){ var v=parseFloat(localStorage.getItem('gcai_course_alt')); return isNaN(v)?null:v; }
 function courseAltitude(){
   var o=getCourseAltOverride();
@@ -7298,6 +7320,7 @@ function holeBearingIsEstimate(){
 }
 // Wind relative to the current hole: {head (+into/-with), cross (+from right/-from left), kmh} or null
 function holeWindInfo(){
+  if(isTournament()) return null;
   var from=activeConditions.windFromDeg!=null?activeConditions.windFromDeg:COMPASS_DEG[activeWindDir];
   var b=holeBearing(), spd=parseFloat(activeWindSpeed);
   if(from==null || b==null || isNaN(spd) || spd<=0) return null;
@@ -7305,6 +7328,7 @@ function holeWindInfo(){
   return { head:Math.round(Math.cos(rel)*spd), cross:Math.round(Math.sin(rel)*spd), kmh:spd };
 }
 function holeWindText(){
+  if(isTournament()) return '';
   var w=holeWindInfo();
   if(!w) return windDisplayString();
   var parts=[];
@@ -7314,6 +7338,7 @@ function holeWindText(){
 }
 // Convenience: plays-like for the current on-course hole using stored green/tee GPS + conditions
 function holePlaysLike(rawM, currentGps){
+  if(isTournament()){ var rm=Math.round(parseFloat(rawM)); return isNaN(rm)?null:{ raw:rm, playsLike:rm, adj:0, parts:[] }; }
   var gr=greenRec()||{}; var tgt=greenTargetPt(); var shotDeg=null, elevChange=null;
   if(tgt && currentGps) shotDeg=bearing(currentGps,tgt);
   else if(tgt && gr.tee) shotDeg=bearing(gr.tee,tgt);
