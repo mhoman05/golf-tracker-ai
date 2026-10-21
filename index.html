@@ -4,7 +4,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
-<title>GolfCaddie AI v82</title>
+<title>GolfCaddie AI v84</title>
 
 <!-- PWA / Home Screen -->
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -1841,6 +1841,23 @@ function practiceCourseHtml(){
   return h+courseDispersionHtml();
 }
 // ── 4a. On-course dispersion (left/centre/right × long/pin high/short) ──
+// ── Measured miss from GPS (approach shots): metres left/right and short/past the pin ──
+function measScatterHtml(list){
+  if(list.length<5) return '';
+  var pts=list.map(function(m){ return [m.off, m.rel]; });
+  var maxX=Math.max(10,Math.max.apply(null,pts.map(function(p){ return Math.abs(p[0]); })))*1.15, maxY=Math.max(10,Math.max.apply(null,pts.map(function(p){ return Math.abs(p[1]); })))*1.15;
+  var W=300,H=260,X=function(v){ return W/2+v/maxX*(W/2-12); }, Y=function(v){ return H/2-v/maxY*(H/2-14); };
+  var n=pts.length, mx=pts.reduce(function(a,p){return a+p[0];},0)/n, my=pts.reduce(function(a,p){return a+p[1];},0)/n;
+  var sx=Math.sqrt(pts.reduce(function(a,p){return a+(p[0]-mx)*(p[0]-mx);},0)/(n-1)), sy=Math.sqrt(pts.reduce(function(a,p){return a+(p[1]-my)*(p[1]-my);},0)/(n-1));
+  var svg='<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;display:block;background:rgba(0,0,0,.15);border-radius:10px">'
+    +'<line x1="'+W/2+'" y1="6" x2="'+W/2+'" y2="'+(H-6)+'" stroke="rgba(255,255,255,.3)" stroke-dasharray="4 4"/><line x1="6" y1="'+H/2+'" x2="'+(W-6)+'" y2="'+H/2+'" stroke="rgba(255,255,255,.3)" stroke-dasharray="4 4"/>'
+    +'<text x="8" y="16" fill="#9bb3a2" font-size="11">Left</text><text x="'+(W-34)+'" y="16" fill="#9bb3a2" font-size="11">Right</text><text x="'+(W/2+6)+'" y="16" fill="#9bb3a2" font-size="11">Past</text><text x="'+(W/2+6)+'" y="'+(H-6)+'" fill="#9bb3a2" font-size="11">Short</text>'
+    +'<ellipse cx="'+X(mx).toFixed(1)+'" cy="'+Y(my).toFixed(1)+'" rx="'+Math.max(3,Math.abs(X(mx+2*sx)-X(mx))).toFixed(1)+'" ry="'+Math.max(3,Math.abs(Y(my+2*sy)-Y(my))).toFixed(1)+'" fill="#d4b25c" fill-opacity=".12" stroke="#d4b25c" stroke-dasharray="4 3"/>'
+    +pts.map(function(p){ return '<circle cx="'+X(p[0]).toFixed(1)+'" cy="'+Y(p[1]).toFixed(1)+'" r="3" fill="#d4b25c" fill-opacity=".8"/>'; }).join('')
+    +'<circle cx="'+W/2+'" cy="'+H/2+'" r="5" fill="none" stroke="#6fd08c" stroke-width="2"/></svg>';
+  return '<div style="margin-top:10px"><div class="lb" style="font-size:.62rem;text-transform:uppercase;letter-spacing:.6px;color:var(--tl);margin-bottom:4px">Measured by GPS · pin at the centre</div>'+svg
+    +'<div class="mu2" style="margin-top:6px">'+n+' shots · average miss '+Math.abs(mx).toFixed(0)+' m '+(mx<0?'left':'right')+', '+Math.abs(my).toFixed(0)+' m '+(my<0?'short':'past')+' · spread ±'+(2*sx).toFixed(0)+' m wide, ±'+(2*sy).toFixed(0)+' m long (2 SD)</div></div>';
+}
 function courseDispersionHtml(){
   var clubs={}, shots=[];
   rounds.forEach(function(r){
@@ -1848,7 +1865,7 @@ function courseDispersionHtml(){
     (r.holes||[]).forEach(function(h){ (h.shots||[]).forEach(function(s){
       var lie=s.lie||s.type||''; if(!s.club||s.club==='P'||lie==='Penalty'||lie==='Recovery'||lie==='Green') return;
       var dir=s.direction||(legacy?'Center':null);
-      shots.push({ club:s.club, dir:dir, v:s.vDir||null, appr:s.approach===true||(s.approach===undefined&&!!s.vDir), tee:lie==='Tee'&&(h.par||4)>=4 });
+      shots.push({ club:s.club, dir:dir, v:s.vDir||null, appr:s.approach===true||(s.approach===undefined&&!!s.vDir), tee:lie==='Tee'&&(h.par||4)>=4, meas:(s.meas&&s.meas.off!=null)?s.meas:null });
       clubs[s.club]=1;
     }); });
   });
@@ -1862,6 +1879,7 @@ function courseDispersionHtml(){
   var h='<div class="card" style="margin-top:10px"><div class="card-title">🎯 Dispersion — from your rounds</div>'
     +'<select class="finput" style="width:100%;margin-bottom:8px" onchange="_cdClub=this.value;renderPractice()">'+opts.map(function(o){ return '<option'+(o===_cdClub?' selected':'')+'>'+o+'</option>'; }).join('')+'</select>';
   var dirs=['Left','Center','Right'], rowsV=['Long','PinHigh','Short'], rowL={Long:'Long',PinHigh:'Pin high',Short:'Short'};
+  var measList=sel.filter(function(s){ return s.meas; }).map(function(s){ return s.meas; });
   var withD=sel.filter(function(s){ return s.dir; });
   if(!withD.length){ return h+'<div class="mu2">No tagged shots for this selection yet. Tag direction (and Long / Pin high / Short on approaches) on the shot cards.</div></div>'; }
   var cnt=function(f){ return withD.filter(f).length; };
@@ -1881,7 +1899,7 @@ function courseDispersionHtml(){
       h+='</div><div class="mu2" style="margin-top:6px">'+tot+' shots with both tags. Centre of the grid is the pin.</div>';
     }
   }
-  return h+'</div>';
+  return h+(_cdClub==='Driver'?'':measScatterHtml(measList))+'</div>';
 }
 
 // ── 2. Drills (indoor-friendly) ──
@@ -3243,6 +3261,7 @@ function buildShotCard(idx, si, shot) {
       '<div class="sf"><label>Result</label><div class="result-row">' + rb + '</div></div>' +
       dirRow + vertRow +
     '</div>' +
+    (shot.meas ? '<div class="mu2" style="margin:-2px 0 8px">\ud83d\udef0\ufe0f GPS: '+(shot.meas.off!=null?(Math.abs(shot.meas.off)+' m '+(shot.meas.off<0?'left':'right')+', '+Math.abs(shot.meas.rel)+' m '+(shot.meas.rel<0?'short of':'past')+' the pin'):('hit '+shot.meas.len+' m'+(shot.meas.onGreen?' (to the first putt)':'')))+(shot._dirAuto||shot._vAuto?' \u00b7 tags filled from it, tap to change':'')+'</div>' : '') +
     ((!onGreen && !teeLong) || (shot.club && shot.club !== 'P')
       ? '<div style="display:flex;justify-content:space-between;align-items:center;gap:24px;margin:6px 0 10px">' +
           ((!onGreen && !teeLong)
@@ -3272,6 +3291,8 @@ function onLieChange(idx, si, val) {
   updShot(idx, si, '_lieAuto', false);
   if (val === 'Green') { updShot(idx, si, 'approach', false); updShot(idx, si, 'vDir', null); }
   else if (shotData[idx][si]) updShot(idx, si, 'approach', approachDefault(idx, si, val));
+  // a shot that started as a putt (default lie) and is really a chip: read the position now, at the ball
+  var _sh=shotData[idx][si]; if (val!=='Green' && val!=='Penalty' && _sh && !_sh.pos && !_sh._gpsTried){ _sh._gpsTried=true; try{ autoFillShot(idx, si); }catch(e){} }
   renderShots(idx);   // direction / vs-target rows depend on lie and club
 }
 function setApproach(idx, si, on) {
@@ -3498,6 +3519,7 @@ function setResult(idx,si,result,btn) {
 // Set direction/vDir on a shot from the persistent shot card (toggle on/off)
 function setDirVal(idx, si, field, val, btn) {
   var shot = shotData[idx] && shotData[idx][si]; if (!shot) return;
+  shot[field==='direction'?'_dirAuto':'_vAuto'] = false;
   var v = shot[field] === val ? null : val;
   updShot(idx, si, field, v);
   var row = btn.closest('.result-row');
@@ -3656,7 +3678,7 @@ function finishRound() {
     actualPar+=(h.par||4);
     holes.push({hole:h.hole,par:h.par,metres:h.metres,hdcp:h.hdcp,elev:(h.elev!=null?h.elev:null),name:h.name,
       strategy:h.strategy||null,hazards:h.hazards||null,diagram:h.diagram||null,score:shots.length,
-      shots:shots.map(s=>({club:s.club,lie:s.lie||s.type||'',distance:s.distance,direction:s.direction||null,vDir:s.vDir||null,approach:s.approach===true?true:(s.approach===false?false:undefined),holed:s.holed===true?true:undefined,full:s.full!==false,result:s.result,note:s.note}))});
+      shots:shots.map(s=>({club:s.club,lie:s.lie||s.type||'',distance:s.distance,direction:s.direction||null,vDir:s.vDir||null,approach:s.approach===true?true:(s.approach===false?false:undefined),holed:s.holed===true?true:undefined,pos:(s.pos&&!s.pos.bad)?[s.pos.lat,s.pos.lng]:undefined,meas:s.meas||undefined,full:s.full!==false,result:s.result,note:s.note}))});
   });
   if(!holes.length){toast('No shots logged','err');return;}
   const round={id:Date.now().toString(),course,date,par:actualPar,weather,score:totalScore,
@@ -7107,11 +7129,18 @@ function suggestClub(target, lie){
 function autoFillShot(idx, si){
   var shot=(shotData[idx]||[])[si], h=activeHoles[idx]; if(!shot||!h) return;
   var lie=shot.lie||'';
+  // Putts never use GPS, except the FIRST putt of a hole: its position is where the approach finished
+  var firstPutt=false;
+  if(lie==='Green'){
+    var prior=(shotData[idx]||[]).slice(0,si).filter(function(x){ return (x.lie||'')!=='Penalty'; });
+    firstPutt = prior.length>0 && !prior.some(function(x){ return (x.lie||'')==='Green'; });
+    if(!firstPutt) return;
+  }
   function finish(distance, pos){
     var s2=(shotData[idx]||[])[si]; if(!s2) return;
     if(distance!=null && s2.distance==null){ s2.distance=distance; s2._gps=true; }
     var d=s2.distance;
-    if(d!=null && s2._clubAuto && lie!=='Green' && !(si===0 && (h.par||4)>=4)){
+    if(d!=null && s2._clubAuto && !(si===0 && (h.par||4)>=4)){
       var pl=null; try{ pl=holePlaysLike(d,pos||null); }catch(e){}
       var club=suggestClub(pl?pl.playsLike:d, lie);
       if(club && club!==s2.club){ s2.club=club; s2.approach = approachDefault(idx,si,lie); s2._playsLike=pl?pl.playsLike:null; }
@@ -7119,17 +7148,55 @@ function autoFillShot(idx, si){
     try{ saveDraft(); }catch(e){}
     if(idx===currentHole){ renderShots(idx); refreshSGChips(idx); }
   }
-  if(lie==='Green') return;
-  if(si===0){ if(shot.distance!=null) finish(null,null); return; }       // tee shot: hole length from the card
-  var tgt=greenTargetPt(); if(!tgt || !navigator.geolocation || noGpsDistance()) return;
+  var cardOnly=function(){ if(si===0 && shot.distance!=null) finish(null,null); };
+  if(!navigator.geolocation || noGpsDistance()){ cardOnly(); return; }
+  var tgt=greenTargetPt();
   getBestPos(3500,6).then(function(p){
-    if((p.coords.accuracy||99)>20) return;
+    if((p.coords.accuracy||99)>20){ cardOnly(); return; }
     var here={lat:p.coords.latitude,lng:p.coords.longitude};
-    var d=Math.round(haversine(here,tgt));
+    var s2=(shotData[idx]||[])[si]; if(!s2) return;
+    s2.pos={ lat:Math.round(here.lat*1e6)/1e6, lng:Math.round(here.lng*1e6)/1e6, acc:Math.round(p.coords.accuracy||0) };
+    if(firstPutt){ updateMeasFor(idx, si); return; }
+    var d=tgt?Math.round(haversine(here,tgt)):null;
+    if(si===0){
+      if(d!=null && h.metres && Math.abs(d-h.metres)>Math.max(40,h.metres*0.25)) s2.pos.bad=true;   // not standing on the tee
+      finish(null,here); return;
+    }
     var cap=(h.metres||600)+40;
-    if(d<4 || d>cap) return;                                    // not plausible: logged after hitting / wrong hole
-    finish(d, here);
-  }).catch(function(){});
+    if(d!=null){
+      if(d>=4 && d<=cap && s2.distance==null) finish(d,here);
+      else {
+        if(d<4 || d>cap || (s2.distance!=null && Math.abs(d-s2.distance)>Math.max(25,s2.distance*0.3))) s2.pos.bad=true;   // logged after hitting, or the wrong hole
+        finish(null,here);
+      }
+    } else finish(null,here);
+    updateMeasFor(idx, si);
+  }).catch(function(){ cardOnly(); });
+}
+// Measured length and miss of the shot BEFORE the one just positioned (never from or to a putt)
+function updateMeasFor(idx, si){
+  var shots=shotData[idx]||[], j=si-1;
+  while(j>=0 && (shots[j].lie||'')==='Penalty') j--;
+  if(j<0) return;
+  var a=shots[j], b=shots[si]; if(!a||!b||!a.pos||!b.pos||a.pos.bad||b.pos.bad) return;
+  if((a.lie||'')==='Green') return;
+  var len=haversine(a.pos,b.pos); if(len<3) return;
+  var onGreen=(b.lie||'')==='Green';
+  // ball on the green: the first putt's position is where the shot finished. It can only be
+  // within the putt distance of the pin, so a length far from the distance-to-pin means a wrong spot.
+  if(onGreen && a.distance!=null && Math.abs(len-a.distance)>((b.distance!=null?b.distance:15)+12)){ b.pos.bad=true; return; }
+  var m={ len:Math.round(len) }, tgt=greenTargetPt();
+  if(onGreen) m.onGreen=true;
+  if(tgt && a.approach===true && !onGreen){
+    var D=haversine(a.pos,tgt), aa=alongAcross(b.pos,a.pos,bearing(a.pos,tgt));
+    m.D=Math.round(D); m.off=Math.round(aa.across); m.rel=Math.round(aa.along-D);          // + right / + past the pin
+    var T=Math.max(8,0.06*D);
+    if(!a.direction){ a.direction = aa.across<-T?'Left':(aa.across>T?'Right':'Center'); a._dirAuto=true; }
+    if(!a.vDir){ var r=aa.along-D; a.vDir = r>T?'Long':(r<-T?'Short':'PinHigh'); a._vAuto=true; }
+  }
+  a.meas=m;
+  try{ saveDraft(); }catch(e){}
+  if(idx===currentHole) renderShots(idx);
 }
 
 function autoCapturePoint(kind, holeIdx){
