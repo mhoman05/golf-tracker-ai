@@ -4,7 +4,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
-<title>GolfCaddie AI v77</title>
+<title>GolfCaddie AI v78</title>
 
 <!-- PWA / Home Screen -->
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -3051,12 +3051,40 @@ function usePar3Club(club){
   s.club=club; s._clubAuto=false; s.approach=true; try{ saveDraft(); }catch(e){}
   renderShots(idx);
 }
+// ── Personal hole notes (kept per course and hole) ──
+var _noteEditKey=null;
+function getHoleNotes(){ try{ return JSON.parse(localStorage.getItem('gcai_hole_notes')||'{}')||{}; }catch(e){ return {}; } }
+function holeNoteKey(idx){
+  var cn=((document.getElementById('courseInput')||{}).value||'').trim(), h=activeHoles[idx];
+  return h&&cn ? cn+'|'+h.hole : null;
+}
+function saveHoleNote(key, text){
+  var n=getHoleNotes(); text=String(text||'').trim();
+  if(text) n[key]=text; else delete n[key];
+  try{ localStorage.setItem('gcai_hole_notes',JSON.stringify(n)); }catch(e){ toast('Could not save the note','err'); }
+}
+function editHoleNote(on){
+  _noteEditKey=on?holeNoteKey(currentHole):null; renderHoleHistory(currentHole);
+  if(on) setTimeout(function(){ var t=document.getElementById('holeNoteText'); if(t) t.focus(); },50);
+}
+function holeNoteHtml(idx){
+  var key=holeNoteKey(idx); if(!key) return '';
+  var note=getHoleNotes()[key]||'';
+  if(_noteEditKey===key){
+    return '<div class="fold" style="margin-bottom:9px;padding:10px"><textarea id="holeNoteText" rows="3" style="width:100%" placeholder="Aim point, hazards, club to avoid\u2026" oninput="saveHoleNote(\''+jsStr(key)+'\',this.value)">'+esc(note)+'</textarea>'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px"><span class="mu2">Saved as you type</span><button class="btn btn-gold btn-sm" onclick="editHoleNote(false)">Done</button></div></div>';
+  }
+  if(note){
+    return '<div class="fold" style="margin-bottom:9px;padding:10px;display:flex;gap:10px;align-items:flex-start"><span style="font-size:1.1rem">\ud83d\udcdd</span><div style="flex:1;font-size:.85rem;line-height:1.45;white-space:pre-wrap">'+esc(note)+'</div><button class="btn btn-ghost btn-sm" onclick="editHoleNote(true)">Edit</button></div>';
+  }
+  return '<button class="btn btn-ghost btn-sm" style="margin-bottom:9px;width:100%" onclick="editHoleNote(true)">\u002b Hole note</button>';
+}
 function renderHoleHistory(idx){
   var el=document.getElementById('holeHistory'); if(!el) return;
   var h=activeHoles[idx]; if(!h){ el.innerHTML=''; return; }
   var cn=((document.getElementById('courseInput')||{}).value||'').trim(), par=h.par||4;
   var rows=cn?holeHistoryRows(cn,h.hole,par).slice(0,5):[];
-  var html='';
+  var html=holeNoteHtml(idx);
   if(par===3){
     var pl=null; try{ if(h.metres) pl=holePlaysLike(h.metres,null); }catch(e){}
     var sug=(pl&&suggestClub(pl.playsLike,'Tee'))||null, last=rows.length?rows[0].club:null;
@@ -3947,7 +3975,32 @@ function collectShotSG() {
 function sgSum(list) { return list.reduce(function(a, x) { return a + x.sg; }, 0); }
 
 // Putting by distance: make rate and SG per putt
-// Lag putting: how close does the first putt leave it? A leave over 1 m counts as a poor lag.
+
+// Putting averages: per round, per hole, per green in regulation
+function puttingAveragesHtml(){
+  var rp=[], holes=0, putts=0, girH=0, girP=0, nGirH=0, nGirP=0;
+  rounds.forEach(function(r){
+    var hs=(r.holes||[]).filter(function(h){ return h.shots && h.shots.length; }); if(!hs.length) return;
+    var rPutts=0, rHoles=0;
+    hs.forEach(function(h){
+      var st=holeStatsOf(h); if(st.putts===0) return;          // holes with no putts logged (holed out / not logged) are skipped
+      rPutts+=st.putts; rHoles++; holes++; putts+=st.putts;
+      if(st.gir){ girH++; girP+=st.putts; } else { nGirH++; nGirP+=st.putts; }
+    });
+    if(rHoles>=hs.length*0.8) rp.push({ putts:rPutts, per18:rPutts/hs.length*18 });
+  });
+  if(!holes) return '';
+  var avgR=rp.length?rp.reduce(function(a,x){return a+x.putts;},0)/rp.length:null, avg18=rp.length?rp.reduce(function(a,x){return a+x.per18;},0)/rp.length:null;
+  var tile=function(label,val,sub){ return '<div class="kpi-tile"><div class="kpi-tl">'+label+'</div><div class="kpi-tv">'+val+'</div><div class="mu2">'+sub+'</div></div>'; };
+  return '<div class="kpi-grid">'
+    +tile('Putts / round',avgR!=null?avgR.toFixed(1):'—',rp.length+' round'+(rp.length===1?'':'s')+(avg18!=null?' · '+avg18.toFixed(1)+' per 18 holes':''))
+    +tile('Putts / hole',(putts/holes).toFixed(2),holes+' holes with putts')
+    +tile('Putts / GIR hole',girH?(girP/girH).toFixed(2):'—',girH+' greens hit')
+    +tile('Putts / missed GIR',nGirH?(nGirP/nGirH).toFixed(2):'—',nGirH+' holes (chip or pitch first)')
+    +'</div>';
+}
+
+// ── Lag putting: how close does the first putt leave it? A leave over 1 m counts as a poor lag.
 function lagPuttingHtml(){
   var bands=[[0,3,'Under 3 m'],[3,6,'3–6 m'],[6,10,'6–10 m'],[10,999,'10 m +']], data=bands.map(function(){ return []; }), all=[];
   rounds.forEach(function(r){ (r.holes||[]).forEach(function(h){
@@ -4522,7 +4575,7 @@ function _renderStatsInner() {
   }
 
   var _allSG = collectShotSG();
-  var sgClubHtml = sgByClubHtml(_allSG), puttDistHtml = puttingByDistanceHtml(_allSG), lagHtml = lagPuttingHtml(), trendHtmlAll = trendsHtml(_allSG);
+  var sgClubHtml = sgByClubHtml(_allSG), puttDistHtml = puttingByDistanceHtml(_allSG), lagHtml = lagPuttingHtml(), putAvgHtml = puttingAveragesHtml(), trendHtmlAll = trendsHtml(_allSG);
   const fmtDiff=d=>d===0?'E':(d>0?'+':'')+d.toFixed(1);
   const fmtDiffInt=d=>d===0?'E':(d>0?'+':'')+Math.round(d);
   var _sgS = calcSG(false), _sgH = calcSG(true);
@@ -4652,7 +4705,7 @@ function _renderStatsInner() {
       </div>
     </div>
 
-    ${lagHtml}${puttDistHtml}`)}
+    ${putAvgHtml}${lagHtml}${puttDistHtml}`)}
     ${fold('📐 Strokes gained by club', `${sgClubHtml}`)}
     ${fold('📈 Trends', `${trendHtmlAll}`)}
     ${fold('⏱ Pace &amp; activity', `${paceHtml}<!-- Rounds played -->
@@ -6900,9 +6953,12 @@ function elevForHole(key, holeIdx){
 function getBestPos(maxMs, goodAcc){
   return new Promise(function(res,rej){
     if(!navigator.geolocation){ rej(new Error('This device has no geolocation')); return; }
-    var best=null, done=false, wid=null, t=null;
+    var best=null, done=false, wid=null, t=null, lock=null;
+    // keep the screen awake just while we wait for a good fix
+    try{ if(navigator.wakeLock && navigator.wakeLock.request) navigator.wakeLock.request('screen').then(function(l){ if(done){ try{ l.release(); }catch(e){} } else lock=l; }).catch(function(){}); }catch(e){}
+    function releaseLock(){ try{ if(lock){ lock.release(); lock=null; } }catch(e){} }
     function fin(){
-      if(done) return; done=true;
+      if(done) return; done=true; releaseLock();
       try{ navigator.geolocation.clearWatch(wid); }catch(e){}
       clearTimeout(t);
       if(best) res(best); else rej(new Error('No GPS fix'));
@@ -6910,7 +6966,7 @@ function getBestPos(maxMs, goodAcc){
     wid=navigator.geolocation.watchPosition(function(p){
       if(!best || p.coords.accuracy<best.coords.accuracy) best=p;
       if(p.coords.accuracy<=(goodAcc||5)) fin();
-    }, function(e){ if(!best && !done){ done=true; clearTimeout(t); try{ navigator.geolocation.clearWatch(wid); }catch(x){} rej(new Error(e.message||'Location unavailable')); } },
+    }, function(e){ if(!best && !done){ done=true; releaseLock(); clearTimeout(t); try{ navigator.geolocation.clearWatch(wid); }catch(x){} rej(new Error(e.message||'Location unavailable')); } },
     {enableHighAccuracy:true, maximumAge:0, timeout:maxMs||4000});
     t=setTimeout(fin, maxMs||4000);
   });
