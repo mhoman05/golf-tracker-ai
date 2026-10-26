@@ -1,9 +1,11 @@
 // GolfCaddie AI service worker: lets the app open with no signal.
 // The page is fetched fresh when online (so updates arrive) and served from the cache when offline.
-const CACHE = 'gcai-offline-v1';
+const CACHE = 'gcai-offline-v2';
 
 self.addEventListener('install', function (e) {
-  e.waitUntil(caches.open(CACHE).then(function (c) { return c.add('./'); }).catch(function () {}).then(function () { return self.skipWaiting(); }));
+  e.waitUntil(caches.open(CACHE).then(function (c) {
+    return Promise.all(['./', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png'].map(function (u) { return c.add(u).catch(function () {}); }));
+  }).then(function () { return self.skipWaiting(); }));
 });
 
 self.addEventListener('activate', function (e) {
